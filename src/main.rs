@@ -9,7 +9,6 @@ use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
-const WHITE: ravif::RGB8 = ravif::RGB8::new(255, 255, 255);
 
 #[derive(Debug, Clone)]
 enum Algo {
@@ -89,13 +88,15 @@ fn get_config() -> Config {
                 .short('x')
                 .takes_value(true)
                 .default_value_if("algo", Some("julia"), Some("0"))
-                .default_value("0.6"),
+                .default_value("0.6")
+                .allow_hyphen_values(true),
         )
         .arg(
             Arg::new("pos_y")
                 .short('y')
                 .takes_value(true)
-                .default_value("0"),
+                .default_value("0")
+                .allow_hyphen_values(true),
         )
         .arg(Arg::new("scale_y").long("scale-y").takes_value(true))
         .arg(Arg::new("scale_x").long("scale-x").takes_value(true))
