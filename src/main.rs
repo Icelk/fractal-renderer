@@ -9,6 +9,7 @@ use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
+const WHITE: ravif::RGB8 = ravif::RGB8::new(255, 255, 255);
 
 #[derive(Debug, Clone)]
 enum Algo {
@@ -67,7 +68,7 @@ fn get_config() -> Config {
                 .long("iterations")
                 .short('i')
                 .takes_value(true)
-                .help("Limit of iterations. Default is 50 for Mandelbrot & Julia and 50_000 for Fern.")
+                .help("Limit of iterations. Default is 50 for Mandelbrot & Julia and 10_000_000 for Fern.")
         )
         .arg(
             Arg::new("limit")
@@ -119,7 +120,7 @@ fn get_config() -> Config {
                 .default_value("5"),
         )
         .arg(Arg::new("primary_color").long("primary-color").takes_value(true).help("The main color of output."))
-        .arg(Arg::new("secondary_color").long("secondary-color").takes_value(true).help("The secondary color of output. Only applicable to Mandelbrot and Julia."))
+        .arg(Arg::new("secondary_color").long("secondary-color").takes_value(true).help("The secondary color of output. Defaults to orange for Mandelbrot and Julia. Acts as the background color for the Fern."))
         .arg(
             Arg::new("disable_inside")
                 .long("disable-inside")
@@ -167,6 +168,12 @@ fn get_config() -> Config {
             .help("Imaginary part of start point for Julia set.")
             .takes_value(true)
             .allow_hyphen_values(true),
+        )
+        .arg(
+            Arg::new("color_weight")
+            .long("color-weight")
+            .short('w')
+            .help("How much 'opacity' each hit on the Fern has. Increase to get a darker fern.").default_value("0.01")
         );
 
     let matches = app.get_matches();
@@ -205,6 +212,7 @@ fn get_config() -> Config {
         start.re = matches.value_of_t("julia_re").unwrap();
         start.im = matches.value_of_t("julia_im").unwrap();
     }
+    let color_weight = matches.value_of_t("color_weight").unwrap();
 
     Config {
         width,
@@ -222,6 +230,7 @@ fn get_config() -> Config {
         open,
         filename,
         algo,
+        color_weight,
     }
 }
 
@@ -242,6 +251,7 @@ struct Config {
     filename: String,
     open: bool,
     algo: Algo,
+    color_weight: f64,
 }
 impl Config {
     fn iterations(&self) -> u32 {
@@ -250,7 +260,7 @@ impl Config {
         }
         match self.algo {
             Algo::Mandelbrot | Algo::Julia(_) => 50,
-            Algo::BarnsleyFern => 50_000,
+            Algo::BarnsleyFern => 10_000_000,
         }
     }
     fn primary_color(&self) -> ravif::RGB8 {
@@ -260,7 +270,7 @@ impl Config {
 
         match self.algo {
             Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(40, 40, 255),
-            Algo::BarnsleyFern => ravif::RGB8::new(20, 150, 30),
+            Algo::BarnsleyFern => ravif::RGB8::new(4, 100, 3),
         }
     }
     fn secondary_color(&self) -> ravif::RGB8 {
@@ -270,7 +280,7 @@ impl Config {
 
         match self.algo {
             Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(240, 170, 0),
-            _ => self.primary_color(),
+            Algo::BarnsleyFern => ravif::RGB8::new(240, 240, 240),
         }
     }
 }
@@ -318,7 +328,7 @@ fn main() {
         }
         Algo::BarnsleyFern => {
             let mut contents =
-                vec![ravif::RGB8::new(0, 0, 0); (config.width * config.height) as usize];
+                vec![config.secondary_color(); (config.width * config.height) as usize];
 
             let mut image =
                 Image::new(&mut contents, config.width as usize, config.height as usize);
@@ -459,12 +469,32 @@ impl<'a> Image<'a> {
             height,
         }
     }
-    fn set_pixel(&mut self, x: usize, y: usize, value: ravif::RGB8) {
+    fn pixel_mut(&mut self, x: usize, y: usize) -> Option<&mut ravif::RGB8> {
+        if x > self.width {
+            return None;
+        }
         let index = y * self.width + x;
         if self.contents.len() < index {
-            return;
+            return None;
         }
-        self.contents[index] = value;
+        self.contents.get_mut(index)
+    }
+    fn subtract_pixel(&mut self, x: usize, y: usize, value: ravif::RGB8, amount: f64) {
+        let pixel = if let Some(p) = self.pixel_mut(x, y) {
+            p
+        } else {
+            return;
+        };
+
+        let new = ravif::RGB8::new(
+            (pixel.r as f64 * 1.0 / ((((1.0 / (value.r as f64 / 255.0)) - 1.0) * amount) + 1.0))
+                as u8,
+            (pixel.g as f64 * 1.0 / ((((1.0 / (value.g as f64 / 255.0)) - 1.0) * amount) + 1.0))
+                as u8,
+            (pixel.b as f64 * 1.0 / ((((1.0 / (value.b as f64 / 255.0)) - 1.0) * amount) + 1.0))
+                as u8,
+        );
+        *pixel = new;
     }
 }
 impl<'a> From<Image<'a>> for ravif::Img<&'a [ravif::RGB8]> {
@@ -512,40 +542,44 @@ fn fern(config: &Config, image: &mut Image) {
     let mut x = (config.pos.re) * width;
     let mut y = (config.pos.im) * height;
 
-    let mut rng = rand::rngs::SmallRng::from_entropy();
+    // 0.006 just works fine, to get the scale in line with the other algos
+    let effective_scale_x = 65.0 * config.scale.re * config.width as f64 * 0.006;
+    let effective_scale_y = 37.0 * config.scale.im * config.height as f64 * 0.006;
 
-    let mut i_without_reset = 0;
+    let mut rng = rand::rngs::SmallRng::from_entropy();
 
     let color = config.primary_color();
 
     for _ in 0..config.iterations() {
-        let pixel_x = x as f64 * 65.0 * config.scale.re;
-        let pixel_y = y as f64 * 37.0 * config.scale.re;
+        let pixel_x = x as f64 * effective_scale_x;
+        let pixel_y = y as f64 * effective_scale_y;
 
-        image.set_pixel(
+        image.subtract_pixel(
             (pixel_x + width / 2.0) as usize,
             (height - (pixel_y)) as usize,
-            color_multiply(color, (config.exposure * 20.0) / i_without_reset as f64),
+            color,
+            config.color_weight,
         );
 
         let r: f64 = rng.gen();
 
-        i_without_reset += 1;
-
         // https://en.wikipedia.org/wiki/Barnsley_fern#Python
         if r < 0.01 {
+            let old_x = x;
             x = 0.00 * x + 0.00 * y;
-            y = 0.00 * x + 0.16 * y + 0.00;
-            i_without_reset = 0;
+            y = 0.00 * old_x + 0.16 * y + 0.00;
         } else if r < 0.86 {
+            let old_x = x;
             x = 0.85 * x + 0.04 * y;
-            y = -0.04 * x + 0.85 * y + 1.60;
+            y = -0.04 * old_x + 0.85 * y + 1.60;
         } else if r < 0.93 {
+            let old_x = x;
             x = 0.20 * x - 0.26 * y;
-            y = 0.23 * x + 0.22 * y + 1.60;
+            y = 0.23 * old_x + 0.22 * y + 1.60;
         } else {
+            let old_x = x;
             x = -0.15 * x + 0.28 * y;
-            y = 0.26 * x + 0.24 * y + 0.44;
+            y = 0.26 * old_x + 0.24 * y + 0.44;
         }
     }
 }
