@@ -10,6 +10,10 @@ Rendering the Mandelbrot set at 1,000,000x zoom.
 ![mandelbrot at 1000000x zoom](screenshots/mandelbrot-1000000x.avif)
 It took my shitty laptop ~1 second to render the 3000x3000 image above. And that's on the CPU!
 
+# Examples
+
+Look at [the examples MD doc](examples.md).
+
 # Contribution
 
 This project is dual-licensed under Apache 2.0 or MIT.
