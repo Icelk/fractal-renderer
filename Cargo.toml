@@ -9,3 +9,4 @@ edition = "2021"
 ravif = "0.8.8"
 clap = "^3"
 rayon = "^1.5"
+rand = { version = "0.8.4", features = ["small_rng"] }
