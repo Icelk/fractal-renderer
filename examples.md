@@ -14,3 +14,18 @@ ALWAYS run with `--release`!
 - Classic: `-d 3000 2000`
 - Golden: `<no arguments>`
 - Golden fringe: `-i 400`
+
+All of [the Wikipedia zoom gallery](https://en.wikipedia.org/wiki/Mandelbrot_set#Image_gallery_of_a_zoom_sequence):
+
+> The scale of this program needs to be ~0.4 of those described in the article.
+> Why the iterators are so different is because they contribute to the brightness of the "background".
+
+- `-s 400 -x -0.7435669 -y 0.1314023 --open -i 5000 -e 10`
+- `-s 2000 -x -0.74364990 -y 0.13188204 --open -i 800`
+- `-s 12000 -x -0.74364085 -y 0.13182733 --open -i 5000 -e 1'`
+- `-s 100000 -x -.743643135 -y  .131825963 --open -i 2000 -d -e 3`
+- `-s 500000 -x -.7436447860 -y  .1318252536 --open -i 3000 -d -e 5 3000 3000`
+
+# Fern
+
+- Like exactly the one from [Wikipedia](https://en.wikipedia.org/wiki/Barnsley_fern#/media/File:Barnsley_fern_1024x1024.png) `-a fern 1000 1000`
