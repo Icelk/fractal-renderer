@@ -24,7 +24,7 @@ All of [the Wikipedia zoom gallery](https://en.wikipedia.org/wiki/Mandelbrot_set
 - `-s 2000 -x -0.74364990 -y 0.13188204 --open -i 800`
 - `-s 12000 -x -0.74364085 -y 0.13182733 --open -i 5000 -e 1'`
 - `-s 100000 -x -.743643135 -y  .131825963 --open -i 2000 -d -e 3`
-- `-s 500000 -x -.7436447860 -y  .1318252536 --open -i 3000 -d -e 5 3000 3000`
+- `-s 500000 -x -.7436447860 -y  .1318252536 --open -i 4000 -d -e 5 4000 2000`
 
 # Fern
 
