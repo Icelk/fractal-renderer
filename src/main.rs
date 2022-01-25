@@ -399,7 +399,7 @@ impl Add for Imaginary {
 
 #[inline(always)]
 fn coord_to_space(coord: f64, max: f64, offset: f64, pos: f64, scale: f64) -> f64 {
-    ((coord / max) - offset) / scale - pos
+    ((coord / max) - offset) / scale + pos
 }
 #[inline(always)]
 fn xy_to_imaginary(
