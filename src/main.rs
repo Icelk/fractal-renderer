@@ -8,11 +8,13 @@ use clap::{Arg, ArgGroup};
 use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
+const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
+
 #[derive(Debug, Clone)]
 enum Algo {
     Mandelbrot,
     BarnsleyFern,
-    Julia,
+    Julia(Imaginary),
 }
 enum AlgoParseError {
     /// Use one of the variants.
@@ -31,11 +33,20 @@ impl FromStr for Algo {
         } else if s.eq_ignore_ascii_case("fern") || s.eq_ignore_ascii_case("barnsleyfern") {
             Self::BarnsleyFern
         } else if s.eq_ignore_ascii_case("julia") {
-            Self::Julia
+            Self::Julia(Imaginary { re: 0.0, im: 0.0 })
         } else {
             return Err(AlgoParseError::Incorrect);
         })
     }
+}
+
+fn parse_hex_rgb(s: &str) -> ravif::RGB8 {
+    let (p1, p2) = s.split_at(2);
+    let (p2, p3) = p2.split_at(2);
+    let r = u8::from_str_radix(p1, 16).expect("failed to parse hex color");
+    let g = u8::from_str_radix(p2, 16).expect("failed to parse hex color");
+    let b = u8::from_str_radix(p3, 16).expect("failed to parse hex color");
+    ravif::RGB8::new(r, g, b)
 }
 
 fn get_config() -> Config {
@@ -56,26 +67,27 @@ fn get_config() -> Config {
                 .long("iterations")
                 .short('i')
                 .takes_value(true)
-                .help("Default is 50 for Mandelbrot and 50_000 for Fern.")
+                .help("Limit of iterations. Default is 50 for Mandelbrot & Julia and 50_000 for Fern.")
         )
         .arg(
             Arg::new("limit")
                 .long("limit")
                 .short('l')
-                .help("Limit where vaules are treated to escape. Only applicable to Mandelbrot.")
+                .help("Limit where vaules are treated to escape. Only applicable to Mandelbrot & Julia.")
                 .takes_value(true)
                 .default_value("65536"),
         )
         .arg(
             Arg::new("stable_limit")
                 .long("stable-limit")
-                .help("The limit of points considered inside the fractal. Only applicable to Mandelbrot.")
+                .help("The limit of points considered inside the fractal. Only applicable to Mandelbrot & Julia.")
                 .default_value("2"),
         )
         .arg(
             Arg::new("pos_x")
                 .short('x')
                 .takes_value(true)
+                .default_value_if("algo", Some("julia"), Some("0"))
                 .default_value("0.6"),
         )
         .arg(
@@ -106,6 +118,8 @@ fn get_config() -> Config {
                 .takes_value(true)
                 .default_value("5"),
         )
+        .arg(Arg::new("primary_color").long("primary-color").takes_value(true).help("The main color of output."))
+        .arg(Arg::new("secondary_color").long("secondary-color").takes_value(true).help("The secondary color of output. Only applicable to Mandelbrot and Julia."))
         .arg(
             Arg::new("disable_inside")
                 .long("disable-inside")
@@ -138,7 +152,21 @@ fn get_config() -> Config {
                 .default_value("mandelbrot")
                 .possible_value("mandelbrot")
                 .possible_value("fern")
-                .possible_value("julia"),
+                .possible_value("julia").requires_if("julia", "julia_re").requires_if("julia", "julia_im"),
+        )
+        .arg(
+            Arg::new("julia_re")
+            .long("julia-real")
+            .help("Real part of start point for Julia set.")
+            .takes_value(true)
+            .allow_hyphen_values(true),
+        )
+        .arg(
+            Arg::new("julia_im")
+            .long("julia-imaginary")
+            .help("Imaginary part of start point for Julia set.")
+            .takes_value(true)
+            .allow_hyphen_values(true),
         );
 
     let matches = app.get_matches();
@@ -163,6 +191,8 @@ fn get_config() -> Config {
     let limit = matches.value_of_t("limit").unwrap();
     let stable_limit = matches.value_of_t("stable_limit").unwrap();
     let exposure: f64 = matches.value_of_t("exposure").unwrap();
+    let primary_color = matches.value_of("primary_color").map(parse_hex_rgb);
+    let secondary_color = matches.value_of("secondary_color").map(parse_hex_rgb);
     let inside_disabled = matches.is_present("disable_inside");
     let unsmooth = matches.is_present("unsmooth");
     let filename = matches
@@ -170,7 +200,12 @@ fn get_config() -> Config {
         .map(|f| format!("{}.avif", f))
         .unwrap();
     let open = matches.is_present("open");
-    let algo = matches.value_of_t("algo").unwrap();
+    let mut algo = matches.value_of_t("algo").unwrap();
+    if let Algo::Julia(start) = &mut algo {
+        start.re = matches.value_of_t("julia_re").unwrap();
+        start.im = matches.value_of_t("julia_im").unwrap();
+    }
+
     Config {
         width,
         height,
@@ -182,7 +217,8 @@ fn get_config() -> Config {
         exposure,
         inside: !inside_disabled,
         smooth: !unsmooth,
-        color: None,
+        primary_color,
+        secondary_color,
         open,
         filename,
         algo,
@@ -201,7 +237,8 @@ struct Config {
     exposure: f64,
     inside: bool,
     smooth: bool,
-    color: Option<ravif::RGB8>,
+    primary_color: Option<ravif::RGB8>,
+    secondary_color: Option<ravif::RGB8>,
     filename: String,
     open: bool,
     algo: Algo,
@@ -212,20 +249,28 @@ impl Config {
             return iters;
         }
         match self.algo {
-            Algo::Mandelbrot => 50,
+            Algo::Mandelbrot | Algo::Julia(_) => 50,
             Algo::BarnsleyFern => 50_000,
-            Algo::Julia => unimplemented!(),
         }
     }
-    fn color(&self) -> ravif::RGB8 {
-        if let Some(color) = self.color {
+    fn primary_color(&self) -> ravif::RGB8 {
+        if let Some(color) = self.primary_color {
             return color;
         }
 
         match self.algo {
-            Algo::Mandelbrot => ravif::RGB8::new(40, 40, 255),
+            Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(40, 40, 255),
             Algo::BarnsleyFern => ravif::RGB8::new(20, 150, 30),
-            Algo::Julia => unimplemented!(),
+        }
+    }
+    fn secondary_color(&self) -> ravif::RGB8 {
+        if let Some(color) = self.secondary_color {
+            return color;
+        }
+
+        match self.algo {
+            Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(240, 170, 0),
+            _ => self.primary_color(),
         }
     }
 }
@@ -250,14 +295,14 @@ fn main() {
     };
 
     let data = match config.algo {
-        Algo::Mandelbrot => {
+        Algo::Mandelbrot | Algo::Julia(_) => {
             let mut image: Vec<_> = (0..config.height)
                 // Only one parallell iter, else, it'd be less efficient.
                 .into_par_iter()
                 .map(|y| {
                     let mut row = Vec::with_capacity(config.width as usize);
                     for x in 0..config.width {
-                        row.push(get_mandelbrot_pixel(&config, x, y))
+                        row.push(get_recursive_pixel(&config, x, y))
                     }
                     row
                 })
@@ -282,7 +327,6 @@ fn main() {
 
             image_to_data(image, &img_config, &config)
         }
-        Algo::Julia => unimplemented!(),
     };
 
     let mut file =
@@ -296,7 +340,6 @@ fn main() {
                 .arg(command_arg)
                 .arg(exec)
                 .spawn()
-                .and_then(|mut c| c.wait())
                 .expect("failed to open image");
         }
         #[cfg(windows)]
@@ -361,7 +404,11 @@ fn xy_to_imaginary(
     Imaginary { re, im }
 }
 
-fn get_mandelbrot_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
+fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
+    fn unreachable() -> ! {
+        panic!("called get_recursive_pixel when algo wasn't a recursive pixel one.")
+    }
+
     let start = xy_to_imaginary(
         x,
         y,
@@ -370,10 +417,15 @@ fn get_mandelbrot_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
         &config.pos,
         &config.scale,
     );
-    let (mandelbrot, iters) = mandelbrot(config.iterations(), start, config.limit);
+    let (mandelbrot, iters) = match config.algo {
+        Algo::Mandelbrot => recursive(config.iterations(), start, start, config.limit),
+        Algo::Julia(c) => recursive(config.iterations(), start, c, config.limit),
+        _ => unreachable(),
+    };
 
     let dist = mandelbrot.squared_distance();
-    let weight = if dist > config.stable_limit {
+
+    if dist > config.stable_limit {
         let mut iters = iters as f64;
 
         if config.smooth {
@@ -385,14 +437,13 @@ fn get_mandelbrot_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
             iters += 1.0 - nu;
         }
 
-        iters as f64 / config.iterations() as f64 * config.exposure
+        let mult = iters as f64 / config.iterations() as f64 * config.exposure;
+        color_multiply(config.primary_color(), mult)
     } else if config.inside {
-        dist
+        color_multiply(config.secondary_color(), dist)
     } else {
-        0.0
-    };
-    let color = config.color();
-    color_multiply(color, weight)
+        BLACK
+    }
 }
 
 struct Image<'a> {
@@ -431,19 +482,17 @@ fn color_multiply(color: ravif::RGB8, mult: f64) -> ravif::RGB8 {
 
 /// `limit` is distance from center considered out of bounds.
 ///
-/// # Less banding
-///
-/// Increase limit and iterations.
+/// If `c == start`, this is a Mandelbrot set. If `c` is constant, it's a Julia set.
 ///
 /// # Return
 ///
 /// Returns the final position and the number of iterations to get there.
 #[inline(always)]
-fn mandelbrot(iterations: u32, start: Imaginary, limit: f64) -> (Imaginary, u32) {
+fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, u32) {
     let squared = limit * limit;
     let mut previous = start;
     for i in 0..iterations {
-        let next = previous.square() + start;
+        let next = previous.square() + c;
         let dist = next.squared_distance();
         if dist > squared {
             return (next, i);
@@ -456,6 +505,7 @@ fn mandelbrot(iterations: u32, start: Imaginary, limit: f64) -> (Imaginary, u32)
     }
     (previous, iterations)
 }
+#[inline(always)]
 fn fern(config: &Config, image: &mut Image) {
     let width = config.width as f64;
     let height = config.height as f64;
@@ -466,7 +516,7 @@ fn fern(config: &Config, image: &mut Image) {
 
     let mut i_without_reset = 0;
 
-    let color = config.color();
+    let color = config.primary_color();
 
     for _ in 0..config.iterations() {
         let pixel_x = x as f64 * 65.0 * config.scale.re;
@@ -474,7 +524,7 @@ fn fern(config: &Config, image: &mut Image) {
 
         image.set_pixel(
             (pixel_x + width / 2.0) as usize,
-            (height - (pixel_y )) as usize,
+            (height - (pixel_y)) as usize,
             color_multiply(color, (config.exposure * 20.0) / i_without_reset as f64),
         );
 
