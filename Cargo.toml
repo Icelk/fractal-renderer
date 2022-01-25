@@ -1,9 +1,15 @@
 [package]
-name = "fractal-rendering"
+name = "fractal-renderer"
 version = "0.1.0"
+authors = ["Icelk <main@icelk.dev>"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+rust-version = "1.56"
+description = "A stupidly fast paralell fractal renderer with support for Mandelbrot, any Julia set and Barnsley Ferns. Easily handles magnification over 1 milion."
+readme = "README.md"
+repository = "https://github.com/Icelk/fractal-renderer/"
+license = "Apache-2.0 OR MIT"
+keywords = ["fractal", "renderer", "mandelbrot", "julia"]
+categories = ["algorithms", "command-line-utilities", "mathematics", "visualization"]
 
 [dependencies]
 ravif = "0.8.8"
