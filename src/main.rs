@@ -528,10 +528,6 @@ fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Im
         if dist > squared {
             return (next, i);
         }
-        // optimization
-        if dist < 0.0001 {
-            return (next, i);
-        }
         previous = next;
     }
     (previous, iterations)
