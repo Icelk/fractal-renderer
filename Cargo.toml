@@ -16,3 +16,19 @@ ravif = "0.8.8"
 clap = "^3"
 rayon = "^1.5"
 rand = { version = "0.8.4", features = ["small_rng"] }
+spirv-builder = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu", default-features = false, features = ["watch", "use-compiled-tools"] }
+futures = { optional = true, version = "0.3", default-features = false, features = ["std", "executor"] }
+wgpu = { optional = true, version = "0.12", features = ["spirv"] }
+winit = { optional = true, version = "0.26" }
+strum = { optional = true, version = "0.23.0", default_features = false, features = ["std", "derive"] }
+
+eframe = { optional = true, git = "https://github.com/emilk/egui/" }
+
+[features]
+default = ["avif", "gui"]
+
+# TODO: large change, since we'll have to move to not using ravif's RGB.
+avif = []
+# Run on the GPU
+gpu = ["spirv-builder", "futures", "wgpu", "winit", "strum"]
+gui = ["eframe"]
