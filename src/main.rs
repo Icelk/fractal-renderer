@@ -13,7 +13,7 @@ mod gui;
 
 const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Algo {
     Mandelbrot,
     BarnsleyFern,
@@ -250,7 +250,7 @@ fn get_config() -> Config {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Config {
     width: u32,
     height: u32,
@@ -421,7 +421,7 @@ fn main() {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Imaginary {
     re: f64,
     im: f64,

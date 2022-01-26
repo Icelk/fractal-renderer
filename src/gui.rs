@@ -29,7 +29,7 @@ struct App {
     image: Arc<Mutex<Option<egui::ColorImage>>>,
     texture: Option<(egui::TextureHandle, eframe::egui::Vec2)>,
     working: Arc<AtomicBool>,
-    finish: Condvar,
+    finish: Arc<(Condvar, Mutex<bool>)>,
     redraw_channel: mpsc::Sender<Config>,
     try_redraw: bool,
 }
@@ -44,6 +44,9 @@ impl App {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         self.redraw_channel.send(self.state.clone()).unwrap();
     }
+    fn wait_request(&self) {
+        self.finish.0.wait(self.finish.1.lock().unwrap()).unwrap();
+    }
     fn new() -> Self {
         let (redraw_channel, rx) = mpsc::channel();
 
@@ -51,6 +54,8 @@ impl App {
         let image_handle = Arc::clone(&image);
         let working = Arc::new(AtomicBool::new(false));
         let working_handle = Arc::clone(&working);
+        let finish = Arc::new((Condvar::new(), Mutex::new(false)));
+        let finish_handle = Arc::clone(&finish);
         std::thread::spawn(move || {
             let thread_poll = rayon::ThreadPoolBuilder::new().build().unwrap();
 
@@ -75,6 +80,7 @@ impl App {
                     *lock = Some(color_image);
                 }
                 working_handle.store(false, std::sync::atomic::Ordering::SeqCst);
+                finish_handle.0.notify_all();
             }
 
             println!("Shutting rendering down.");
@@ -85,7 +91,7 @@ impl App {
             image,
             texture: None,
             working,
-            finish: Condvar::new(),
+            finish,
             redraw_channel,
             try_redraw: false,
         }
@@ -98,10 +104,10 @@ impl epi::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &eframe::epi::Frame) {
-        fn texture<'a>(
-            app: & mut App,
-            ctx: &egui::Context,
-        ) -> (egui::TextureHandle, egui::Vec2) {
+        fn texture<'a>(app: &mut App, ctx: &egui::Context) -> (egui::TextureHandle, egui::Vec2) {
+            if app.working.load(std::sync::atomic::Ordering::SeqCst) {
+                app.wait_request();
+            }
             if let Some(img) = app.image.lock().unwrap().take() {
                 let size = img.size;
                 let handle = ctx.load_texture("main fractal", img);
@@ -111,25 +117,42 @@ impl epi::App for App {
                 return texture.clone();
             }
             app.request_redraw();
+            app.wait_request();
             texture(app, ctx)
         }
         let (texture, size) = texture(self, ctx);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let aspect_ratio = size.x / size.y;
-            let mut available_size = ui.available_size();
-            available_size.y = cmp::min(
-                F32Ord(available_size.y),
-                F32Ord(available_size.x / aspect_ratio),
-            )
-            .0;
-            available_size.x = cmp::min(
-                F32Ord(available_size.x),
-                F32Ord(available_size.y * aspect_ratio),
-            )
-            .0;
-            ui.image(&texture, available_size);
+        let previous_state = self.state.clone();
+
+        egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
+            // Iterations
+            {
+                let mut iterations = self.state.iterations().to_string();
+                if ui.text_edit_singleline(&mut iterations).changed() {
+                    if let Ok(i) = iterations.parse() {
+                        self.state.iterations = Some(i)
+                    }
+                }
+            }
         });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(egui::Color32::BLACK))
+            .show(ctx, |ui| {
+                let aspect_ratio = size.x / size.y;
+                let available_size = ui.available_size();
+                let mut space = available_size;
+                space.y = cmp::min(F32Ord(available_size.y), F32Ord(space.x / aspect_ratio)).0;
+                space.x = cmp::min(F32Ord(available_size.x), F32Ord(space.y * aspect_ratio)).0;
+                ui.allocate_space(egui::Vec2::new(
+                    (available_size.x - space.x) / 2.0,
+                    (available_size.y - space.y) / 2.0,
+                ));
+                ui.image(&texture, space);
+            });
+
+        if self.state != previous_state {
+            self.request_redraw();
+        }
     }
 }
 
