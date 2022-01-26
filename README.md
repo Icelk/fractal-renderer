@@ -17,6 +17,8 @@ In the future, I'll make the feature optional and enable you to use other image 
 
 # Examples
 
+To give arguments to this binary when using `cargo run --release`, add them after two hyphens: `cargo r --release -- <arguments>`.
+
 Look at [the examples MD doc](examples.md).
 
 # Contribution
