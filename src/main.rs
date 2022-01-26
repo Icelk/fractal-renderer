@@ -540,7 +540,7 @@ fn fern(config: &Config, image: &mut Image) {
     let mut y = (config.pos.im) * height;
 
     // 0.006 just works fine, to get the scale in line with the other algos
-    let effective_scale_x = 65.0 * config.scale.re * config.width as f64 * 0.006;
+    let effective_scale_x = 65.0 * config.scale.re * config.height as f64 * 0.006;
     let effective_scale_y = 37.0 * config.scale.im * config.height as f64 * 0.006;
 
     let mut rng = rand::rngs::SmallRng::from_entropy();
