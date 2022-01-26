@@ -88,7 +88,7 @@ fn get_config() -> Config {
                 .short('x')
                 .takes_value(true)
                 .default_value_if("algo", Some("julia"), Some("0"))
-                .default_value("0.6")
+                .default_value("-0.6")
                 .allow_hyphen_values(true),
         )
         .arg(
