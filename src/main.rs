@@ -442,7 +442,7 @@ fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
         if config.smooth {
             // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
 
-            let log_zn = f64::log2(dist) / 2.0;
+            let log_zn = f64::log2(dist.sqrt()) / 2.0;
             let nu = f64::log2(log_zn);
 
             iters += 1.0 - nu;
