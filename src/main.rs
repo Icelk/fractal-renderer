@@ -1,12 +1,15 @@
 use std::fmt::Display;
 use std::io::Write;
-use std::ops::Add;
+use std::ops::{Add, Mul};
 use std::process::Command;
 use std::str::FromStr;
 
 use clap::{Arg, ArgGroup};
 use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+#[cfg(feature = "gui")]
+mod gui;
 
 const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
 
@@ -175,6 +178,12 @@ fn get_config() -> Config {
             .long("color-weight")
             .short('w')
             .help("How much 'opacity' each hit on the Fern has. Increase to get a darker fern.").default_value("0.01")
+        )
+        .arg(
+            Arg::new("gui")
+            .long("gui")
+            .short('g')
+            .help("Start the GUI. Requires the `gui` cargo feature.")
         );
 
     let matches = app.get_matches();
@@ -214,6 +223,10 @@ fn get_config() -> Config {
         start.im = matches.value_of_t("julia_im").unwrap();
     }
     let color_weight = matches.value_of_t("color_weight").unwrap();
+    let gui = matches.is_present("gui");
+    if gui && cfg!(not(feature = "gui")) {
+        eprintln!("The gui feature isn't enabled! Remove the GUI argument.");
+    }
 
     Config {
         width,
@@ -232,6 +245,8 @@ fn get_config() -> Config {
         filename,
         algo,
         color_weight,
+
+        gui,
     }
 }
 
@@ -253,6 +268,8 @@ struct Config {
     open: bool,
     algo: Algo,
     color_weight: f64,
+
+    gui: bool,
 }
 impl Config {
     fn iterations(&self) -> u32 {
@@ -285,6 +302,30 @@ impl Config {
         }
     }
 }
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            width: 2000,
+            height: 1000,
+            iterations: None,
+            limit: 2.0_f64.powi(16),
+            stable_limit: 2.0,
+            pos: Imaginary::ZERO,
+            scale: Imaginary::ONE * 0.4,
+            exposure: 2.0,
+            inside: true,
+            smooth: true,
+            primary_color: None,
+            secondary_color: None,
+            filename: "output".to_owned(),
+            open: false,
+            algo: Algo::Mandelbrot,
+            color_weight: 0.01,
+
+            gui: false,
+        }
+    }
+}
 
 fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config) -> Vec<u8> {
     println!("Starting encode.");
@@ -293,19 +334,8 @@ fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config) ->
     data
 }
 
-fn main() {
-    let config = get_config();
-
-    let img_config = ravif::Config {
-        speed: 8,
-        quality: 100.0,
-        threads: 0,
-        color_space: ravif::ColorSpace::YCbCr,
-        alpha_quality: 0.0,
-        premultiplied_alpha: false,
-    };
-
-    let data = match config.algo {
+fn get_image(config: &Config) -> Vec<ravif::RGB8> {
+    match config.algo {
         Algo::Mandelbrot | Algo::Julia(_) => {
             let mut image: Vec<_> = (0..config.height)
                 // Only one parallell iter, else, it'd be less efficient.
@@ -320,12 +350,7 @@ fn main() {
                 .flatten()
                 .collect();
 
-            let img = Image::new(
-                image.as_mut_slice(),
-                config.width as usize,
-                config.height as usize,
-            );
-            image_to_data(img, &img_config, &config)
+            image
         }
         Algo::BarnsleyFern => {
             let mut contents =
@@ -336,10 +361,38 @@ fn main() {
 
             fern(&config, &mut image);
 
-            image_to_data(image, &img_config, &config)
+            contents
         }
+    }
+}
+
+fn main() {
+    let config = get_config();
+
+    #[cfg(feature = "gui")]
+    if config.gui {
+        gui::start();
+        return;
+    }
+
+    let img_config = ravif::Config {
+        speed: 8,
+        quality: 100.0,
+        threads: 0,
+        color_space: ravif::ColorSpace::YCbCr,
+        alpha_quality: 0.0,
+        premultiplied_alpha: false,
     };
 
+    let mut contents = get_image(&config);
+
+    let img = Image::new(
+        contents.as_mut_slice(),
+        config.width as usize,
+        config.height as usize,
+    );
+
+    let data = image_to_data(img, &img_config, &config);
     let mut file =
         std::fs::File::create(&config.filename).expect("failed to create output image file");
     file.write_all(&data).expect("failed to write image data");
@@ -374,6 +427,8 @@ struct Imaginary {
     im: f64,
 }
 impl Imaginary {
+    const ZERO: Self = Self { re: 0.0, im: 0.0 };
+    const ONE: Self = Self { re: 1.0, im: 1.0 };
     #[inline(always)]
     fn square(self) -> Self {
         let re = (self.re * self.re) - (self.im * self.im);
@@ -394,6 +449,12 @@ impl Add for Imaginary {
             re: self.re + rhs.re,
             im: self.im + rhs.im,
         }
+    }
+}
+impl Mul<f64> for Imaginary {
+    type Output = Self;
+    fn mul(self, rhs: f64) -> Self::Output {
+        Self {re: self.re * rhs, im: self.im * rhs}
     }
 }
 

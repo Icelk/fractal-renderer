@@ -23,6 +23,7 @@ winit = { optional = true, version = "0.26" }
 strum = { optional = true, version = "0.23.0", default_features = false, features = ["std", "derive"] }
 
 eframe = { optional = true, git = "https://github.com/emilk/egui/" }
+image = { optional = true, version = "^0.23" }
 
 [features]
 default = ["avif", "gui"]
@@ -31,4 +32,4 @@ default = ["avif", "gui"]
 avif = []
 # Run on the GPU
 gpu = ["spirv-builder", "futures", "wgpu", "winit", "strum"]
-gui = ["eframe"]
+gui = ["eframe", "image"]
