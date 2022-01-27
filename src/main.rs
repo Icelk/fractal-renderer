@@ -26,7 +26,7 @@ impl Algo {
                 return false;
             }
         }
-        self.eq(other)
+        !self.eq(other)
     }
 }
 enum AlgoParseError {
