@@ -190,7 +190,7 @@ impl epi::App for App {
                             .with_main_wrap(true),
                         |ui| {
                             {
-                                let combo_box = egui::ComboBox::from_id_source("type")
+                                egui::ComboBox::from_id_source("type")
                                     .selected_text(match self.state.algo {
                                         crate::Algo::Mandelbrot => "Mandelbrot",
                                         crate::Algo::Julia(_) => "Julia",
@@ -213,16 +213,17 @@ impl epi::App for App {
                                             "Fern",
                                         );
                                     });
-                                if combo_box.response.changed() {
-                                    self.state.iterations = None;
-                                    self.state.pos = Imaginary::ZERO;
-                                    self.state.scale = Imaginary::ONE * 0.4;
-                                }
                             }
                             // Resolution
                             {
-                                ui.add(egui::DragValue::new(&mut self.state.width));
-                                ui.add(egui::DragValue::new(&mut self.state.height));
+                                ui.add(
+                                    egui::DragValue::new(&mut self.state.width)
+                                        .clamp_range(16..=u32::MAX),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut self.state.height)
+                                        .clamp_range(16..=u32::MAX),
+                                );
                             }
 
                             // Iterations
