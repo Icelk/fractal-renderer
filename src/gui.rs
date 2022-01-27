@@ -1,5 +1,6 @@
-use crate::Config;
+use crate::{Algo, Config, Imaginary};
 use std::cmp;
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -92,6 +93,21 @@ impl App {
             try_redraw: false,
         }
     }
+    fn number_input<T: ToString + FromStr>(value: &mut T, ui: &mut egui::Ui) -> Option<T> {
+        let mut s = value.to_string();
+        if ui
+            .add_sized(
+                egui::Vec2::new(60.0, ui.available_height()),
+                egui::TextEdit::singleline(&mut s),
+            )
+            .changed()
+        {
+            if let Ok(i) = s.parse() {
+                return Some(i);
+            }
+        }
+        None
+    }
 }
 
 impl epi::App for App {
@@ -124,17 +140,235 @@ impl epi::App for App {
 
         let previous_state = self.state.clone();
 
-        egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
-            // Iterations
-            {
-                let mut iterations = self.state.iterations().to_string();
-                if ui.text_edit_singleline(&mut iterations).changed() {
-                    if let Ok(i) = iterations.parse() {
-                        self.state.iterations = Some(i)
+        // So the combo box works (needs to have space below)
+        egui::TopBottomPanel::top("controls").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                {
+                    let combo_box = egui::ComboBox::from_id_source("type")
+                        .selected_text(match self.state.algo {
+                            crate::Algo::Mandelbrot => "Mandelbrot",
+                            crate::Algo::Julia(_) => "Julia",
+                            crate::Algo::BarnsleyFern => "Fern",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.state.algo,
+                                Algo::Mandelbrot,
+                                "Mandelbrot",
+                            );
+                            ui.selectable_value(
+                                &mut self.state.algo,
+                                Algo::Julia(Imaginary::ZERO),
+                                "Julia",
+                            );
+                            ui.selectable_value(&mut self.state.algo, Algo::BarnsleyFern, "Fern");
+                        });
+                    if combo_box.response.changed() {
+                        self.state.iterations = None;
+                        self.state.pos = Imaginary::ZERO;
+                        self.state.scale = Imaginary::ONE * 0.4;
                     }
                 }
-            }
+                // Resolution
+                {
+                    let mut width = self.state.width;
+                    if let Some(width) = Self::number_input(&mut width, ui) {
+                        self.state.width = width;
+                    }
+                    let mut height = self.state.height;
+                    if let Some(height) = Self::number_input(&mut height, ui) {
+                        self.state.height = height;
+                    }
+                }
+
+                // Iterations
+                {
+                    let mut iters = self.state.iterations();
+                    if let Some(iter) = Self::number_input(&mut iters, ui) {
+                        self.state.iterations = Some(iter)
+                    }
+                }
+                // julia pos
+                if let Algo::Julia(julia_c) = &mut self.state.algo {
+                    use std::ops::RangeInclusive;
+                    struct PointSelect<'a> {
+                        size: egui::Vec2,
+                        circle_radius: f32,
+                        range: RangeInclusive<egui::Vec2>,
+                        value: &'a mut egui::Vec2,
+                    }
+                    impl<'a> PointSelect<'a> {
+                        fn new(
+                            value: &'a mut egui::Vec2,
+                            range: RangeInclusive<egui::Vec2>,
+                            size: f32,
+                        ) -> Self {
+                            PointSelect {
+                                value,
+                                range,
+                                circle_radius: 4.0,
+                                size: egui::Vec2::new(size, size),
+                            }
+                        }
+
+                        fn x_range(&self) -> RangeInclusive<f32> {
+                            self.range.start().x..=self.range.end().x
+                        }
+                        fn y_range(&self) -> RangeInclusive<f32> {
+                            self.range.end().y..=self.range.start().y
+                        }
+
+                        fn value_to_ui_pos(&self, rect: &egui::Rect) -> egui::Pos2 {
+                            let x = egui::remap_clamp(self.value.x, self.x_range(), rect.x_range());
+                            let y = egui::remap_clamp(self.value.y, self.y_range(), rect.y_range());
+                            egui::Pos2::new(x, y)
+                        }
+                        fn ui_pos_to_value(
+                            &self,
+                            rect: &egui::Rect,
+                            pos: egui::Pos2,
+                        ) -> egui::Vec2 {
+                            let x = egui::remap_clamp(pos.x, rect.x_range(), self.x_range());
+                            let y = egui::remap_clamp(pos.y, rect.y_range(), self.y_range());
+
+                            egui::Vec2::new(x, y)
+                        }
+                    }
+                    impl egui::Widget for PointSelect<'_> {
+                        fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+                            let (rect, mut response) =
+                                ui.allocate_exact_size(self.size, egui::Sense::click_and_drag());
+                            let painter = ui.painter();
+
+                            let visuals = ui.style().interact(&response);
+                            let line_stroke = visuals.fg_stroke;
+
+                            let circle_color = ui.style().visuals.widgets.active.fg_stroke.color;
+
+                            let line = |from: egui::Pos2, to: egui::Pos2| {
+                                painter.line_segment([from, to], line_stroke);
+                            };
+
+                            line(rect.center_top(), rect.center_bottom());
+                            line(rect.left_center(), rect.right_center());
+
+                            let circle_pos = self.value_to_ui_pos(&rect);
+                            painter.circle_filled(circle_pos, self.circle_radius, circle_color);
+
+                            if response.dragged() {
+                                if let Some(mouse_pos) = ui.input().pointer.interact_pos() {
+                                    *self.value = self.ui_pos_to_value(&rect, mouse_pos);
+                                }
+                                response.mark_changed();
+                            }
+
+                            response
+                        }
+                    }
+
+                    let mut value = egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
+
+                    let frame =
+                        egui::containers::Frame::dark_canvas(ui.style()).margin(egui::Vec2::ZERO);
+
+                    frame.show(ui, |ui| {
+                        let widget = PointSelect::new(
+                            &mut value,
+                            egui::Vec2::new(-1.5, -1.5)..=egui::Vec2::new(1.5, 1.5),
+                            80.0,
+                        );
+                        ui.add(widget).changed()
+                    });
+
+                    julia_c.re = value.x as f64;
+                    julia_c.im = value.y as f64;
+                }
+                // Exposure
+                {
+                    ui.add(
+                        egui::Slider::new(&mut self.state.exposure, 0.01..=50.0).logarithmic(true),
+                    );
+                }
+                // Color weight
+                if let Algo::BarnsleyFern = self.state.algo {
+                    ui.add(
+                        egui::Slider::new(&mut self.state.color_weight, 0.0001..=10.0)
+                            .logarithmic(true),
+                    );
+                }
+                // Flags
+                if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
+                    ui.checkbox(&mut self.state.inside, "Coloured inside");
+                    ui.checkbox(&mut self.state.smooth, "Smoothed");
+                }
+                // Movement
+                #[allow(unused_braces, clippy::blocks_in_if_conditions)]
+                if !ctx.wants_keyboard_input() {
+                    let dt = { ctx.input().predicted_dt } as f64;
+
+                    let scale_x = 1.0 / self.state.scale.re;
+                    let scale_y = 1.0 / self.state.scale.im;
+                    // move
+                    if { ctx.input().key_down(egui::Key::ArrowLeft) } {
+                        self.state.pos.re -= scale_x * dt * 0.5;
+                    }
+                    if { ctx.input().key_down(egui::Key::ArrowRight) } {
+                        self.state.pos.re += scale_y * dt * 0.5;
+                    }
+                    if { ctx.input().key_down(egui::Key::ArrowUp) } {
+                        self.state.pos.im -= scale_x * dt * 0.5;
+                    }
+                    if { ctx.input().key_down(egui::Key::ArrowDown) } {
+                        self.state.pos.im += scale_y * dt * 0.5;
+                    }
+                    // scale
+                    {
+                        let delta = ctx.input().scroll_delta.y;
+                        if delta >= 1.0 || delta <= -1.0 {
+                            self.state.scale = self.state.scale
+                                * if delta < 0.0 {
+                                    let delta = -delta;
+                                    let scale_diff = (F32Ord((delta / 10.0 + 1.0).log10() / 2.0)
+                                        .min(F32Ord(1.0)))
+                                    .0;
+
+                                    1.0 - scale_diff as f64
+                                } else {
+                                    1.0 + (delta as f64 / 80.0)
+                                };
+                        }
+                    }
+                    // screenshot
+                    if { ctx.input().key_pressed(egui::Key::S) } {
+                        let mut config = self.state.clone();
+                        std::thread::spawn(move || {
+                            config.width *= 2;
+                            config.height *= 2;
+                            let image = crate::get_image(&config);
+                            crate::write_image(&config, image);
+                        });
+                    }
+                    // info
+                    ui.label(format!("{:.3}", self.state.scale.re));
+                    if let Algo::Julia(value) = self.state.algo {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(format!(
+                                "{:.5}+{:.5}i",
+                                self.state.pos.re, self.state.pos.im
+                            ));
+                            ui.end_row();
+                            ui.label(format!("{:.5}+{:.5}i", value.re, value.im,));
+                        });
+                    } else {
+                        ui.label(format!(
+                            "{:.5}+{:.5}i",
+                            self.state.pos.re, self.state.pos.im
+                        ));
+                    }
+                }
+            })
         });
+        // Render this after controls to give that space. (even if it was below this on screen)
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
@@ -155,6 +389,13 @@ impl epi::App for App {
             });
 
         if self.state != previous_state {
+            if self.state.algo.is_different(&previous_state.algo) {
+                let new_state = Config {
+                    algo: self.state.algo.clone(),
+                    ..Default::default()
+                };
+                self.state = new_state;
+            }
             self.request_redraw(frame.clone());
         }
     }

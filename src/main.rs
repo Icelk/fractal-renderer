@@ -19,6 +19,16 @@ enum Algo {
     BarnsleyFern,
     Julia(Imaginary),
 }
+impl Algo {
+    fn is_different(&self, other: &Self) -> bool {
+        if let Self::Julia(_) = self {
+            if let Self::Julia(_) = other {
+                return false;
+            }
+        }
+        self.eq(other)
+    }
+}
 enum AlgoParseError {
     /// Use one of the variants.
     Incorrect,
@@ -317,7 +327,7 @@ impl Default for Config {
             smooth: true,
             primary_color: None,
             secondary_color: None,
-            filename: "output".to_owned(),
+            filename: "output.avif".to_owned(),
             open: false,
             algo: Algo::Mandelbrot,
             color_weight: 0.01,
@@ -366,15 +376,7 @@ fn get_image(config: &Config) -> Vec<ravif::RGB8> {
     }
 }
 
-fn main() {
-    let config = get_config();
-
-    #[cfg(feature = "gui")]
-    if config.gui {
-        gui::start();
-        return;
-    }
-
+fn write_image(config: &Config, mut contents: Vec<ravif::RGB8>) {
     let img_config = ravif::Config {
         speed: 8,
         quality: 100.0,
@@ -383,16 +385,13 @@ fn main() {
         alpha_quality: 0.0,
         premultiplied_alpha: false,
     };
-
-    let mut contents = get_image(&config);
-
     let img = Image::new(
         contents.as_mut_slice(),
         config.width as usize,
         config.height as usize,
     );
 
-    let data = image_to_data(img, &img_config, &config);
+    let data = image_to_data(img, &img_config, config);
     let mut file =
         std::fs::File::create(&config.filename).expect("failed to create output image file");
     file.write_all(&data).expect("failed to write image data");
@@ -419,6 +418,19 @@ fn main() {
             start_shell("sh", "-c", &format!("xdg-open {:?}", config.filename));
         };
     }
+}
+
+fn main() {
+    let config = get_config();
+
+    #[cfg(feature = "gui")]
+    if config.gui {
+        gui::start();
+        return;
+    }
+
+    let contents = get_image(&config);
+    write_image(&config, contents);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -454,7 +466,10 @@ impl Add for Imaginary {
 impl Mul<f64> for Imaginary {
     type Output = Self;
     fn mul(self, rhs: f64) -> Self::Output {
-        Self {re: self.re * rhs, im: self.im * rhs}
+        Self {
+            re: self.re * rhs,
+            im: self.im * rhs,
+        }
     }
 }
 
@@ -609,12 +624,11 @@ fn fern(config: &Config, image: &mut Image) {
     let color = config.primary_color();
 
     for _ in 0..config.iterations() {
-        let pixel_x = x as f64 * effective_scale_x;
-        let pixel_y = y as f64 * effective_scale_y;
-
         image.subtract_pixel(
-            (pixel_x + width / 2.0) as usize,
-            (height - (pixel_y)) as usize,
+            (((x - config.pos.re) * effective_scale_x) + width / 2.0) as usize,
+            // 5.0 seems to work fine
+            (height - ((y + (config.pos.im - 5.0) - 0.5) * effective_scale_y + height / 2.0))
+                as usize,
             color,
             config.color_weight,
         );
