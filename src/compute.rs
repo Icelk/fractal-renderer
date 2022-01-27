@@ -1,82 +1,74 @@
+use wgpu::util::DeviceExt;
+
+use futures::future::join;
+use std::{convert::TryInto, future::Future, num::NonZeroU64, time::Duration};
+
 fn maybe_watch(
-    shader: RustGPUShader,
     on_watch: Option<Box<dyn FnMut(wgpu::ShaderModuleDescriptorSpirV<'static>) + Send + 'static>>,
 ) -> wgpu::ShaderModuleDescriptorSpirV<'static> {
-    #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
+    // #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
+    // {
+        // use spirv_builder::{CompileResult, MetadataPrintout, SpirvBuilder};
+        // use std::borrow::Cow;
+        // use std::path::PathBuf;
+        // // Hack: spirv_builder builds into a custom directory if running under cargo, to not
+        // // deadlock, and the default target directory if not. However, packages like `proc-macro2`
+        // // have different configurations when being built here vs. when building
+        // // rustc_codegen_spirv normally, so we *want* to build into a separate target directory, to
+        // // not have to rebuild half the crate graph every time we run. So, pretend we're running
+        // // under cargo by setting these environment variables.
+        // std::env::set_var("OUT_DIR", env!("OUT_DIR"));
+        // std::env::set_var("PROFILE", env!("PROFILE"));
+        // let crate_name = "compute-shader";
+        // let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        // let crate_path = [manifest_dir, "..", "..", "shaders", crate_name]
+            // .iter()
+            // .copied()
+            // .collect::<PathBuf>();
+        // let builder = SpirvBuilder::new(crate_path, "spirv-unknown-vulkan1.1")
+            // .print_metadata(MetadataPrintout::None);
+        // let initial_result = if let Some(mut f) = on_watch {
+            // builder
+                // .watch(move |compile_result| f(handle_compile_result(compile_result)))
+                // .expect("Configuration is correct for watching")
+        // } else {
+            // builder.build().unwrap()
+        // };
+        // fn handle_compile_result(
+            // compile_result: CompileResult,
+        // ) -> wgpu::ShaderModuleDescriptorSpirV<'static> {
+            // let module_path = compile_result.module.unwrap_single();
+            // let data = std::fs::read(module_path).unwrap();
+            // let spirv = Cow::Owned(wgpu::util::make_spirv_raw(&data).into_owned());
+            // wgpu::ShaderModuleDescriptorSpirV {
+                // label: None,
+                // source: spirv,
+            // }
+        // }
+        // handle_compile_result(initial_result)
+    // }
+    // #[cfg(any(target_os = "android", target_arch = "wasm32"))]
     {
-        use spirv_builder::{CompileResult, MetadataPrintout, SpirvBuilder};
-        use std::borrow::Cow;
-        use std::path::PathBuf;
-        // Hack: spirv_builder builds into a custom directory if running under cargo, to not
-        // deadlock, and the default target directory if not. However, packages like `proc-macro2`
-        // have different configurations when being built here vs. when building
-        // rustc_codegen_spirv normally, so we *want* to build into a separate target directory, to
-        // not have to rebuild half the crate graph every time we run. So, pretend we're running
-        // under cargo by setting these environment variables.
-        std::env::set_var("OUT_DIR", env!("OUT_DIR"));
-        std::env::set_var("PROFILE", env!("PROFILE"));
-        let crate_name = match shader {
-            RustGPUShader::Simplest => "simplest-shader",
-            RustGPUShader::Sky => "sky-shader",
-            RustGPUShader::Compute => "compute-shader",
-            RustGPUShader::Mouse => "mouse-shader",
-        };
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let crate_path = [manifest_dir, "..", "..", "shaders", crate_name]
-            .iter()
-            .copied()
-            .collect::<PathBuf>();
-        let builder = SpirvBuilder::new(crate_path, "spirv-unknown-vulkan1.1")
-            .print_metadata(MetadataPrintout::None);
-        let initial_result = if let Some(mut f) = on_watch {
-            builder
-                .watch(move |compile_result| f(handle_compile_result(compile_result)))
-                .expect("Configuration is correct for watching")
-        } else {
-            builder.build().unwrap()
-        };
-        fn handle_compile_result(
-            compile_result: CompileResult,
-        ) -> wgpu::ShaderModuleDescriptorSpirV<'static> {
-            let module_path = compile_result.module.unwrap_single();
-            let data = std::fs::read(module_path).unwrap();
-            let spirv = Cow::Owned(wgpu::util::make_spirv_raw(&data).into_owned());
-            wgpu::ShaderModuleDescriptorSpirV {
-                label: None,
-                source: spirv,
-            }
-        }
-        handle_compile_result(initial_result)
-    }
-    #[cfg(any(target_os = "android", target_arch = "wasm32"))]
-    {
-        match shader {
-            RustGPUShader::Simplest => wgpu::include_spirv_raw!(env!("simplest_shader.spv")),
-            RustGPUShader::Sky => wgpu::include_spirv_raw!(env!("sky_shader.spv")),
-            RustGPUShader::Compute => wgpu::include_spirv_raw!(env!("compute_shader.spv")),
-            RustGPUShader::Mouse => wgpu::include_spirv_raw!(env!("mouse_shader.spv")),
-        }
+        wgpu::include_spirv_raw!(env!("compute_shader.spv"))
     }
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            wasm_bindgen_futures::spawn_local(future)
-        } else {
-            futures::executor::block_on(future)
-        }
+    #[cfg(target_arch = "wasm32")] {
+        wasm_bindgen_futures::spawn_local(future)
+    }
+    #[cfg(not(target_arch = "wasm32"))] {
+        futures::executor::block_on(future)
     }
 }
 
-pub fn start(options: &Options) {
-    let shader_binary = crate::maybe_watch(options.shader, None);
+pub fn start() {
+    let shader_binary = maybe_watch(None);
 
-    block_on(start_internal(options, shader_binary));
+    block_on(start_internal(shader_binary));
 }
 
 pub async fn start_internal(
-    _options: &Options,
     shader_binary: wgpu::ShaderModuleDescriptorSpirV<'static>,
 ) {
     let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
