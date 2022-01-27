@@ -1,6 +1,5 @@
 use crate::{Algo, Config, Imaginary};
 use std::cmp;
-use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -131,168 +130,187 @@ impl epi::App for App {
             self.gui_on = !self.gui_on;
         }
 
+        // Input
+        {
+            // Movement
+            #[allow(unused_braces, clippy::blocks_in_if_conditions)]
+            if !ctx.wants_keyboard_input() {
+                let dt = { ctx.input().predicted_dt } as f64;
+
+                let scale_x = 1.0 / self.state.scale.re;
+                let scale_y = 1.0 / self.state.scale.im;
+                // move
+                if { ctx.input().key_down(egui::Key::ArrowLeft) } {
+                    self.state.pos.re -= scale_x * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowRight) } {
+                    self.state.pos.re += scale_y * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowUp) } {
+                    self.state.pos.im -= scale_x * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowDown) } {
+                    self.state.pos.im += scale_y * dt * 0.5;
+                }
+                // scale
+                {
+                    let delta = ctx.input().scroll_delta.y;
+                    if delta >= 1.0 || delta <= -1.0 {
+                        self.state.scale = self.state.scale
+                            * if delta < 0.0 {
+                                let delta = -delta;
+                                let scale_diff =
+                                    (F32Ord((delta / 10.0 + 1.0).log10() / 2.0).min(F32Ord(1.0))).0;
+
+                                1.0 - scale_diff as f64
+                            } else {
+                                1.0 + (delta as f64 / 80.0)
+                            };
+                    }
+                }
+                // screenshot
+                if { ctx.input().key_pressed(egui::Key::S) } {
+                    let mut config = self.state.clone();
+                    std::thread::spawn(move || {
+                        config.width *= 2;
+                        config.height *= 2;
+                        let image = crate::get_image(&config);
+                        crate::write_image(&config, image);
+                    });
+                }
+            }
+        }
         if self.gui_on {
             // So the combo box works (needs to have space below)
             egui::TopBottomPanel::top("controls").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    {
-                        let combo_box = egui::ComboBox::from_id_source("type")
-                            .selected_text(match self.state.algo {
-                                crate::Algo::Mandelbrot => "Mandelbrot",
-                                crate::Algo::Julia(_) => "Julia",
-                                crate::Algo::BarnsleyFern => "Fern",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut self.state.algo,
-                                    Algo::Mandelbrot,
-                                    "Mandelbrot",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.algo,
-                                    Algo::Julia(Imaginary::ZERO),
-                                    "Julia",
-                                );
-                                ui.selectable_value(
-                                    &mut self.state.algo,
-                                    Algo::BarnsleyFern,
-                                    "Fern",
-                                );
-                            });
-                        if combo_box.response.changed() {
-                            self.state.iterations = None;
-                            self.state.pos = Imaginary::ZERO;
-                            self.state.scale = Imaginary::ONE * 0.4;
-                        }
-                    }
-                    // Resolution
-                    {
-                        ui.add(egui::DragValue::new(&mut self.state.width));
-                        ui.add(egui::DragValue::new(&mut self.state.height));
-                    }
-
-                    // Iterations
-                    ui.separator();
-                    {
-                        let mut iters = self.state.iterations();
-                        if ui.add(egui::DragValue::new(&mut iters)).changed() {
-                            self.state.iterations = Some(iters)
-                        }
-                    }
-                    // Exposure
-                    if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
-                        ui.separator();
-                        ui.add(
-                            egui::Slider::new(&mut self.state.exposure, 0.01..=50.0)
-                                .logarithmic(true),
-                        );
-                    }
-                    // Color weight
-                    if let Algo::BarnsleyFern = self.state.algo {
-                        ui.separator();
-                        ui.add(
-                            egui::Slider::new(&mut self.state.color_weight, 0.0001..=10.0)
-                                .logarithmic(true),
-                        );
-                    }
-                    // Flags
-                    ui.separator();
-                    if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
-                        ui.checkbox(&mut self.state.inside, "Coloured inside");
-                        ui.checkbox(&mut self.state.smooth, "Smoothed");
-                    }
-                    // Movement
-                    #[allow(unused_braces, clippy::blocks_in_if_conditions)]
-                    if !ctx.wants_keyboard_input() {
-                        let dt = { ctx.input().predicted_dt } as f64;
-
-                        let scale_x = 1.0 / self.state.scale.re;
-                        let scale_y = 1.0 / self.state.scale.im;
-                        // move
-                        if { ctx.input().key_down(egui::Key::ArrowLeft) } {
-                            self.state.pos.re -= scale_x * dt * 0.5;
-                        }
-                        if { ctx.input().key_down(egui::Key::ArrowRight) } {
-                            self.state.pos.re += scale_y * dt * 0.5;
-                        }
-                        if { ctx.input().key_down(egui::Key::ArrowUp) } {
-                            self.state.pos.im -= scale_x * dt * 0.5;
-                        }
-                        if { ctx.input().key_down(egui::Key::ArrowDown) } {
-                            self.state.pos.im += scale_y * dt * 0.5;
-                        }
-                        // scale
-                        {
-                            let delta = ctx.input().scroll_delta.y;
-                            if delta >= 1.0 || delta <= -1.0 {
-                                self.state.scale = self.state.scale
-                                    * if delta < 0.0 {
-                                        let delta = -delta;
-                                        let scale_diff =
-                                            (F32Ord((delta / 10.0 + 1.0).log10() / 2.0)
-                                                .min(F32Ord(1.0)))
-                                            .0;
-
-                                        1.0 - scale_diff as f64
-                                    } else {
-                                        1.0 + (delta as f64 / 80.0)
-                                    };
+                ui.horizontal_wrapped(|ui| {
+                    ui.with_layout(
+                        egui::Layout::left_to_right()
+                            .with_cross_align(egui::Align::Min)
+                            .with_main_wrap(true),
+                        |ui| {
+                            {
+                                let combo_box = egui::ComboBox::from_id_source("type")
+                                    .selected_text(match self.state.algo {
+                                        crate::Algo::Mandelbrot => "Mandelbrot",
+                                        crate::Algo::Julia(_) => "Julia",
+                                        crate::Algo::BarnsleyFern => "Fern",
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.state.algo,
+                                            Algo::Mandelbrot,
+                                            "Mandelbrot",
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.state.algo,
+                                            Algo::Julia(Imaginary::ZERO),
+                                            "Julia",
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.state.algo,
+                                            Algo::BarnsleyFern,
+                                            "Fern",
+                                        );
+                                    });
+                                if combo_box.response.changed() {
+                                    self.state.iterations = None;
+                                    self.state.pos = Imaginary::ZERO;
+                                    self.state.scale = Imaginary::ONE * 0.4;
+                                }
                             }
-                        }
-                        // screenshot
-                        if { ctx.input().key_pressed(egui::Key::S) } {
-                            let mut config = self.state.clone();
-                            std::thread::spawn(move || {
-                                config.width *= 2;
-                                config.height *= 2;
-                                let image = crate::get_image(&config);
-                                crate::write_image(&config, image);
-                            });
-                        }
-                    }
-                    ui.separator();
-                    // info
-                    ui.label(format!("{:.3}", self.state.scale.re));
-                    if let Algo::Julia(mut value) = self.state.algo {
-                        let initial_value = value;
-                        ui.horizontal_wrapped(|ui| {
-                            ui.add(egui::DragValue::new(&mut self.state.pos.re).max_decimals(6));
-                            ui.add(egui::DragValue::new(&mut self.state.pos.im).max_decimals(6));
-                            ui.label("i");
-                            ui.end_row();
-                            ui.add(egui::DragValue::new(&mut value.re).max_decimals(6));
-                            ui.add(egui::DragValue::new(&mut value.im).max_decimals(6));
-                            ui.label("i");
-
-                            if value != initial_value {
-                                self.state.algo = Algo::Julia(value);
+                            // Resolution
+                            {
+                                ui.add(egui::DragValue::new(&mut self.state.width));
+                                ui.add(egui::DragValue::new(&mut self.state.height));
                             }
-                        });
-                    } else {
-                        ui.add(egui::DragValue::new(&mut self.state.pos.re).max_decimals(6));
-                        ui.add(egui::DragValue::new(&mut self.state.pos.im).max_decimals(6));
-                        ui.label("i");
-                    }
-                    // julia pos
-                    if let Algo::Julia(julia_c) = &mut self.state.algo {
-                        let mut value = egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
 
-                        let frame = egui::containers::Frame::dark_canvas(ui.style())
-                            .margin(egui::Vec2::ZERO);
+                            // Iterations
+                            ui.separator();
+                            {
+                                let mut iters = self.state.iterations();
+                                if ui.add(egui::DragValue::new(&mut iters)).changed() {
+                                    self.state.iterations = Some(iters)
+                                }
+                            }
+                            // Exposure
+                            if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
+                                ui.separator();
+                                ui.add(
+                                    egui::Slider::new(&mut self.state.exposure, 0.01..=50.0)
+                                        .logarithmic(true),
+                                );
+                            }
+                            // Color weight
+                            if let Algo::BarnsleyFern = self.state.algo {
+                                ui.separator();
+                                ui.add(
+                                    egui::Slider::new(&mut self.state.color_weight, 0.0001..=10.0)
+                                        .logarithmic(true),
+                                );
+                            }
+                            // Flags
+                            ui.separator();
+                            if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
+                                ui.checkbox(&mut self.state.inside, "Coloured inside");
+                                ui.checkbox(&mut self.state.smooth, "Smoothed");
+                            }
+                            ui.separator();
+                            // julia pos
+                            if let Algo::Julia(julia_c) = &mut self.state.algo {
+                                let mut value =
+                                    egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
 
-                        frame.show(ui, |ui| {
-                            let widget = vec2ui::PointSelect::new(
-                                &mut value,
-                                egui::Vec2::new(-1.5, -1.5)..=egui::Vec2::new(1.5, 1.5),
-                                80.0,
-                            );
-                            ui.add(widget).changed()
-                        });
+                                let frame = egui::containers::Frame::dark_canvas(ui.style())
+                                    .margin(egui::Vec2::ZERO);
 
-                        julia_c.re = value.x as f64;
-                        julia_c.im = value.y as f64;
-                    }
-                })
+                                frame.show(ui, |ui| {
+                                    let widget = vec2ui::PointSelect::new(
+                                        &mut value,
+                                        egui::Vec2::new(-1.5, -1.5)..=egui::Vec2::new(1.5, 1.5),
+                                        80.0,
+                                    );
+                                    ui.add(widget).changed()
+                                });
+
+                                julia_c.re = value.x as f64;
+                                julia_c.im = value.y as f64;
+                            }
+                            // info
+                            ui.label(format!("{:.3}", self.state.scale.re));
+                            if let Algo::Julia(mut value) = self.state.algo {
+                                let initial_value = value;
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.state.pos.re)
+                                            .max_decimals(6),
+                                    );
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.state.pos.im)
+                                            .max_decimals(6),
+                                    );
+                                    ui.label("i");
+                                    ui.end_row();
+                                    ui.add(egui::DragValue::new(&mut value.re).max_decimals(6));
+                                    ui.add(egui::DragValue::new(&mut value.im).max_decimals(6));
+                                    ui.label("i");
+
+                                    if value != initial_value {
+                                        self.state.algo = Algo::Julia(value);
+                                    }
+                                });
+                            } else {
+                                ui.add(
+                                    egui::DragValue::new(&mut self.state.pos.re).max_decimals(6),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut self.state.pos.im).max_decimals(6),
+                                );
+                                ui.label("i");
+                            }
+                        },
+                    )
+                });
             });
             if self.state != previous_state {
                 if self.state.algo.is_different(&previous_state.algo) {
