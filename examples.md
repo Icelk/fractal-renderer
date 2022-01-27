@@ -8,6 +8,7 @@ ALWAYS run with `--release`!
 - `-a julia --julia-real -0.7269 --julia-imaginary 0.1889 --open -i 1000 3000 1500`
 - `-a julia --julia-real -0.70176 --julia-imaginary 0.3842 --open -i 400 -e 25 3000 1500`
 - `-a julia --julia-real 0.285 --julia-imaginary 0.01 --open -i 100 -e 10 2500 3000`
+- `-a julia --julia-real -0.2256 --julia-imaginary 0.65 --open -i 500 -e 12 -x 0.29449 -y -0.40460 2000 1000`
 
 # Mandelbrot
 
