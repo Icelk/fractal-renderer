@@ -180,8 +180,8 @@ impl epi::App for App {
                         }
                     }
                     // Exposure
-                    ui.separator();
-                    {
+                    if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
+                        ui.separator();
                         ui.add(
                             egui::Slider::new(&mut self.state.exposure, 0.01..=50.0)
                                 .logarithmic(true),
