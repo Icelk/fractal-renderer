@@ -95,21 +95,6 @@ impl App {
             try_redraw: false,
         }
     }
-    fn number_input<T: ToString + FromStr>(value: &mut T, ui: &mut egui::Ui) -> Option<T> {
-        let mut s = value.to_string();
-        if ui
-            .add_sized(
-                egui::Vec2::new(60.0, ui.available_height()),
-                egui::TextEdit::singleline(&mut s),
-            )
-            .changed()
-        {
-            if let Ok(i) = s.parse() {
-                return Some(i);
-            }
-        }
-        None
-    }
 }
 
 impl epi::App for App {
@@ -182,122 +167,20 @@ impl epi::App for App {
                     }
                     // Resolution
                     {
-                        let mut width = self.state.width;
-                        if let Some(width) = Self::number_input(&mut width, ui) {
-                            self.state.width = width;
-                        }
-                        let mut height = self.state.height;
-                        if let Some(height) = Self::number_input(&mut height, ui) {
-                            self.state.height = height;
-                        }
+                        ui.add(egui::DragValue::new(&mut self.state.width));
+                        ui.add(egui::DragValue::new(&mut self.state.height));
                     }
 
                     // Iterations
+                    ui.separator();
                     {
                         let mut iters = self.state.iterations();
-                        if let Some(iter) = Self::number_input(&mut iters, ui) {
-                            self.state.iterations = Some(iter)
+                        if ui.add(egui::DragValue::new(&mut iters)).changed() {
+                            self.state.iterations = Some(iters)
                         }
-                    }
-                    // julia pos
-                    if let Algo::Julia(julia_c) = &mut self.state.algo {
-                        use std::ops::RangeInclusive;
-                        struct PointSelect<'a> {
-                            size: egui::Vec2,
-                            circle_radius: f32,
-                            range: RangeInclusive<egui::Vec2>,
-                            value: &'a mut egui::Vec2,
-                        }
-                        impl<'a> PointSelect<'a> {
-                            fn new(
-                                value: &'a mut egui::Vec2,
-                                range: RangeInclusive<egui::Vec2>,
-                                size: f32,
-                            ) -> Self {
-                                PointSelect {
-                                    value,
-                                    range,
-                                    circle_radius: 4.0,
-                                    size: egui::Vec2::new(size, size),
-                                }
-                            }
-
-                            fn x_range(&self) -> RangeInclusive<f32> {
-                                self.range.start().x..=self.range.end().x
-                            }
-                            fn y_range(&self) -> RangeInclusive<f32> {
-                                self.range.end().y..=self.range.start().y
-                            }
-
-                            fn value_to_ui_pos(&self, rect: &egui::Rect) -> egui::Pos2 {
-                                let x =
-                                    egui::remap_clamp(self.value.x, self.x_range(), rect.x_range());
-                                let y =
-                                    egui::remap_clamp(self.value.y, self.y_range(), rect.y_range());
-                                egui::Pos2::new(x, y)
-                            }
-                            fn ui_pos_to_value(
-                                &self,
-                                rect: &egui::Rect,
-                                pos: egui::Pos2,
-                            ) -> egui::Vec2 {
-                                let x = egui::remap_clamp(pos.x, rect.x_range(), self.x_range());
-                                let y = egui::remap_clamp(pos.y, rect.y_range(), self.y_range());
-
-                                egui::Vec2::new(x, y)
-                            }
-                        }
-                        impl egui::Widget for PointSelect<'_> {
-                            fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-                                let (rect, mut response) = ui
-                                    .allocate_exact_size(self.size, egui::Sense::click_and_drag());
-                                let painter = ui.painter();
-
-                                let visuals = ui.style().interact(&response);
-                                let line_stroke = visuals.fg_stroke;
-
-                                let circle_color =
-                                    ui.style().visuals.widgets.active.fg_stroke.color;
-
-                                let line = |from: egui::Pos2, to: egui::Pos2| {
-                                    painter.line_segment([from, to], line_stroke);
-                                };
-
-                                line(rect.center_top(), rect.center_bottom());
-                                line(rect.left_center(), rect.right_center());
-
-                                let circle_pos = self.value_to_ui_pos(&rect);
-                                painter.circle_filled(circle_pos, self.circle_radius, circle_color);
-
-                                if response.dragged() {
-                                    if let Some(mouse_pos) = ui.input().pointer.interact_pos() {
-                                        *self.value = self.ui_pos_to_value(&rect, mouse_pos);
-                                    }
-                                    response.mark_changed();
-                                }
-
-                                response
-                            }
-                        }
-
-                        let mut value = egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
-
-                        let frame = egui::containers::Frame::dark_canvas(ui.style())
-                            .margin(egui::Vec2::ZERO);
-
-                        frame.show(ui, |ui| {
-                            let widget = PointSelect::new(
-                                &mut value,
-                                egui::Vec2::new(-1.5, -1.5)..=egui::Vec2::new(1.5, 1.5),
-                                80.0,
-                            );
-                            ui.add(widget).changed()
-                        });
-
-                        julia_c.re = value.x as f64;
-                        julia_c.im = value.y as f64;
                     }
                     // Exposure
+                    ui.separator();
                     {
                         ui.add(
                             egui::Slider::new(&mut self.state.exposure, 0.01..=50.0)
@@ -306,12 +189,14 @@ impl epi::App for App {
                     }
                     // Color weight
                     if let Algo::BarnsleyFern = self.state.algo {
+                        ui.separator();
                         ui.add(
                             egui::Slider::new(&mut self.state.color_weight, 0.0001..=10.0)
                                 .logarithmic(true),
                         );
                     }
                     // Flags
+                    ui.separator();
                     if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
                         ui.checkbox(&mut self.state.inside, "Coloured inside");
                         ui.checkbox(&mut self.state.smooth, "Smoothed");
@@ -364,23 +249,48 @@ impl epi::App for App {
                                 crate::write_image(&config, image);
                             });
                         }
-                        // info
-                        ui.label(format!("{:.3}", self.state.scale.re));
-                        if let Algo::Julia(value) = self.state.algo {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(format!(
-                                    "{:.5}+{:.5}i",
-                                    self.state.pos.re, self.state.pos.im
-                                ));
-                                ui.end_row();
-                                ui.label(format!("{:.5}+{:.5}i", value.re, value.im,));
-                            });
-                        } else {
-                            ui.label(format!(
-                                "{:.5}+{:.5}i",
-                                self.state.pos.re, self.state.pos.im
-                            ));
-                        }
+                    }
+                    ui.separator();
+                    // info
+                    ui.label(format!("{:.3}", self.state.scale.re));
+                    if let Algo::Julia(mut value) = self.state.algo {
+                        let initial_value = value;
+                        ui.horizontal_wrapped(|ui| {
+                            ui.add(egui::DragValue::new(&mut self.state.pos.re).max_decimals(6));
+                            ui.add(egui::DragValue::new(&mut self.state.pos.im).max_decimals(6));
+                            ui.label("i");
+                            ui.end_row();
+                            ui.add(egui::DragValue::new(&mut value.re).max_decimals(6));
+                            ui.add(egui::DragValue::new(&mut value.im).max_decimals(6));
+                            ui.label("i");
+
+                            if value != initial_value {
+                                self.state.algo = Algo::Julia(value);
+                            }
+                        });
+                    } else {
+                        ui.add(egui::DragValue::new(&mut self.state.pos.re).max_decimals(6));
+                        ui.add(egui::DragValue::new(&mut self.state.pos.im).max_decimals(6));
+                        ui.label("i");
+                    }
+                    // julia pos
+                    if let Algo::Julia(julia_c) = &mut self.state.algo {
+                        let mut value = egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
+
+                        let frame = egui::containers::Frame::dark_canvas(ui.style())
+                            .margin(egui::Vec2::ZERO);
+
+                        frame.show(ui, |ui| {
+                            let widget = vec2ui::PointSelect::new(
+                                &mut value,
+                                egui::Vec2::new(-1.5, -1.5)..=egui::Vec2::new(1.5, 1.5),
+                                80.0,
+                            );
+                            ui.add(widget).changed()
+                        });
+
+                        julia_c.re = value.x as f64;
+                        julia_c.im = value.y as f64;
                     }
                 })
             });
@@ -420,4 +330,81 @@ impl epi::App for App {
 pub fn start() {
     let options = eframe::NativeOptions::default();
     eframe::run_native(Box::new(App::new()), options);
+}
+
+/// Taken from
+/// <https://github.com/jakobhellermann/bevy-inspector-egui/blob/7fa7125c79ad6c4552e5347137c99f232d1d24c7/src/impls/vec.rs#L26-L64>
+pub mod vec2ui {
+    use super::*;
+    use std::ops::RangeInclusive;
+    pub struct PointSelect<'a> {
+        size: egui::Vec2,
+        circle_radius: f32,
+        range: RangeInclusive<egui::Vec2>,
+        value: &'a mut egui::Vec2,
+    }
+    impl<'a> PointSelect<'a> {
+        pub fn new(
+            value: &'a mut egui::Vec2,
+            range: RangeInclusive<egui::Vec2>,
+            size: f32,
+        ) -> Self {
+            PointSelect {
+                value,
+                range,
+                circle_radius: 4.0,
+                size: egui::Vec2::new(size, size),
+            }
+        }
+
+        fn x_range(&self) -> RangeInclusive<f32> {
+            self.range.start().x..=self.range.end().x
+        }
+        fn y_range(&self) -> RangeInclusive<f32> {
+            self.range.end().y..=self.range.start().y
+        }
+
+        fn value_to_ui_pos(&self, rect: &egui::Rect) -> egui::Pos2 {
+            let x = egui::remap_clamp(self.value.x, self.x_range(), rect.x_range());
+            let y = egui::remap_clamp(self.value.y, self.y_range(), rect.y_range());
+            egui::Pos2::new(x, y)
+        }
+        fn ui_pos_to_value(&self, rect: &egui::Rect, pos: egui::Pos2) -> egui::Vec2 {
+            let x = egui::remap_clamp(pos.x, rect.x_range(), self.x_range());
+            let y = egui::remap_clamp(pos.y, rect.y_range(), self.y_range());
+
+            egui::Vec2::new(x, y)
+        }
+    }
+    impl egui::Widget for PointSelect<'_> {
+        fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+            let (rect, mut response) =
+                ui.allocate_exact_size(self.size, egui::Sense::click_and_drag());
+            let painter = ui.painter();
+
+            let visuals = ui.style().interact(&response);
+            let line_stroke = visuals.fg_stroke;
+
+            let circle_color = ui.style().visuals.widgets.active.fg_stroke.color;
+
+            let line = |from: egui::Pos2, to: egui::Pos2| {
+                painter.line_segment([from, to], line_stroke);
+            };
+
+            line(rect.center_top(), rect.center_bottom());
+            line(rect.left_center(), rect.right_center());
+
+            let circle_pos = self.value_to_ui_pos(&rect);
+            painter.circle_filled(circle_pos, self.circle_radius, circle_color);
+
+            if response.dragged() {
+                if let Some(mouse_pos) = ui.input().pointer.interact_pos() {
+                    *self.value = self.ui_pos_to_value(&rect, mouse_pos);
+                }
+                response.mark_changed();
+            }
+
+            response
+        }
+    }
 }
