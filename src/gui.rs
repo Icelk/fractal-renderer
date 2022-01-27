@@ -47,7 +47,7 @@ impl App {
             .send((self.state.clone(), frame))
             .unwrap();
     }
-    fn new() -> Self {
+    fn new(config: Config) -> Self {
         let (redraw_channel, rx) = mpsc::channel::<(Config, epi::Frame)>();
 
         let image = Arc::new(Mutex::new(None));
@@ -86,7 +86,7 @@ impl App {
         });
 
         Self {
-            state: Config::default(),
+            state: config,
             gui_on: true,
             image,
             texture: None,
@@ -327,9 +327,9 @@ impl epi::App for App {
     }
 }
 
-pub fn start() {
+pub fn start(config: Config) {
     let options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(App::new()), options);
+    eframe::run_native(Box::new(App::new(config)), options);
 }
 
 /// Taken from

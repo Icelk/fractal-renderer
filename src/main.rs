@@ -262,7 +262,7 @@ fn get_config() -> Config {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Config {
+pub struct Config {
     width: u32,
     height: u32,
     iterations: Option<u32>,
@@ -426,7 +426,7 @@ fn main() {
 
     #[cfg(feature = "gui")]
     if config.gui {
-        gui::start();
+        gui::start(config);
         return;
     }
 
@@ -435,22 +435,22 @@ fn main() {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Imaginary {
-    re: f64,
-    im: f64,
+pub struct Imaginary {
+    pub re: f64,
+    pub im: f64,
 }
 impl Imaginary {
     const ZERO: Self = Self { re: 0.0, im: 0.0 };
     const ONE: Self = Self { re: 1.0, im: 1.0 };
     #[inline(always)]
-    fn square(self) -> Self {
+    pub fn square(self) -> Self {
         let re = (self.re * self.re) - (self.im * self.im);
         let im = 2.0 * self.re * self.im;
 
         Self { re, im }
     }
     #[inline(always)]
-    fn squared_distance(self) -> f64 {
+    pub fn squared_distance(self) -> f64 {
         self.re * self.re + self.im * self.im
     }
 }
@@ -492,7 +492,7 @@ fn xy_to_imaginary(
     Imaginary { re, im }
 }
 
-fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
+pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
     fn unreachable() -> ! {
         panic!("called get_recursive_pixel when algo wasn't a recursive pixel one.")
     }
@@ -534,20 +534,20 @@ fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
     }
 }
 
-struct Image<'a> {
+pub struct Image<'a> {
     contents: &'a mut [ravif::RGB8],
     width: usize,
     height: usize,
 }
 impl<'a> Image<'a> {
-    fn new(contents: &'a mut [ravif::RGB8], width: usize, height: usize) -> Self {
+    pub fn new(contents: &'a mut [ravif::RGB8], width: usize, height: usize) -> Self {
         Self {
             contents,
             width,
             height,
         }
     }
-    fn pixel_mut(&mut self, x: usize, y: usize) -> Option<&mut ravif::RGB8> {
+    pub fn pixel_mut(&mut self, x: usize, y: usize) -> Option<&mut ravif::RGB8> {
         if x > self.width {
             return None;
         }
@@ -596,7 +596,7 @@ fn color_multiply(color: ravif::RGB8, mult: f64) -> ravif::RGB8 {
 ///
 /// Returns the final position and the number of iterations to get there.
 #[inline(always)]
-fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, u32) {
+pub fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, u32) {
     let squared = limit * limit;
     let mut previous = start;
     for i in 0..iterations {
@@ -610,7 +610,7 @@ fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Im
     (previous, iterations)
 }
 #[inline(always)]
-fn fern(config: &Config, image: &mut Image) {
+pub fn fern(config: &Config, image: &mut Image) {
     let width = config.width as f64;
     let height = config.height as f64;
     let mut x = (config.pos.re) * width;
