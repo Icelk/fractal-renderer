@@ -194,6 +194,7 @@ fn get_config() -> Config {
             .long("gui")
             .short('g')
             .help("Start the GUI. Requires the `gui` cargo feature.")
+            .long_help("Use `s` to take a 2x screenshot. `m` hides the menybar. Use the arrow keys and scroll to move around the image.")
         );
 
     let matches = app.get_matches();
