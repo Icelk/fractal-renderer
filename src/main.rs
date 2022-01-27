@@ -337,13 +337,13 @@ fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config) ->
 fn get_image(config: &Config) -> Vec<ravif::RGB8> {
     match config.algo {
         Algo::Mandelbrot | Algo::Julia(_) => {
-            let mut image: Vec<_> = (0..config.height)
+            let image: Vec<_> = (0..config.height)
                 // Only one parallell iter, else, it'd be less efficient.
                 .into_par_iter()
                 .map(|y| {
                     let mut row = Vec::with_capacity(config.width as usize);
                     for x in 0..config.width {
-                        row.push(get_recursive_pixel(&config, x, y))
+                        row.push(get_recursive_pixel(config, x, y))
                     }
                     row
                 })
@@ -359,7 +359,7 @@ fn get_image(config: &Config) -> Vec<ravif::RGB8> {
             let mut image =
                 Image::new(&mut contents, config.width as usize, config.height as usize);
 
-            fern(&config, &mut image);
+            fern(config, &mut image);
 
             contents
         }

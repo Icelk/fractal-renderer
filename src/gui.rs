@@ -1,7 +1,7 @@
 use crate::Config;
 use std::cmp;
 use std::sync::atomic::AtomicBool;
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use eframe::{egui, epi};
 
@@ -29,12 +29,11 @@ struct App {
     image: Arc<Mutex<Option<egui::ColorImage>>>,
     texture: Option<(egui::TextureHandle, eframe::egui::Vec2)>,
     working: Arc<AtomicBool>,
-    finish: Arc<(Condvar, Mutex<bool>)>,
-    redraw_channel: mpsc::Sender<Config>,
+    redraw_channel: mpsc::Sender<(Config, epi::Frame)>,
     try_redraw: bool,
 }
 impl App {
-    fn request_redraw(&mut self) {
+    fn request_redraw(&mut self, frame: epi::Frame) {
         if self.working.load(std::sync::atomic::Ordering::SeqCst) {
             self.try_redraw = true;
             return;
@@ -42,26 +41,24 @@ impl App {
         self.try_redraw = false;
         self.working
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.redraw_channel.send(self.state.clone()).unwrap();
-    }
-    fn wait_request(&self) {
-        self.finish.0.wait(self.finish.1.lock().unwrap()).unwrap();
+        self.redraw_channel
+            .send((self.state.clone(), frame))
+            .unwrap();
     }
     fn new() -> Self {
-        let (redraw_channel, rx) = mpsc::channel();
+        let (redraw_channel, rx) = mpsc::channel::<(Config, epi::Frame)>();
 
         let image = Arc::new(Mutex::new(None));
         let image_handle = Arc::clone(&image);
         let working = Arc::new(AtomicBool::new(false));
         let working_handle = Arc::clone(&working);
-        let finish = Arc::new((Condvar::new(), Mutex::new(false)));
-        let finish_handle = Arc::clone(&finish);
         std::thread::spawn(move || {
             let thread_poll = rayon::ThreadPoolBuilder::new().build().unwrap();
 
-            while let Ok(config) = rx.recv() {
-                let mut contents = thread_poll.install(|| crate::get_image(&config));
+            while let Ok((config, frame)) = rx.recv() {
+                let contents = thread_poll.install(|| crate::get_image(&config));
 
+                #[allow(clippy::unsound_collection_transmute)]
                 let mut image_rgb_contents: Vec<u8> = unsafe { std::mem::transmute(contents) };
                 unsafe { image_rgb_contents.set_len(image_rgb_contents.len() * 3) };
 
@@ -80,7 +77,7 @@ impl App {
                     *lock = Some(color_image);
                 }
                 working_handle.store(false, std::sync::atomic::Ordering::SeqCst);
-                finish_handle.0.notify_all();
+                frame.request_repaint();
             }
 
             println!("Shutting rendering down.");
@@ -91,7 +88,6 @@ impl App {
             image,
             texture: None,
             working,
-            finish,
             redraw_channel,
             try_redraw: false,
         }
@@ -103,24 +99,28 @@ impl epi::App for App {
         "Interact with fractals."
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &eframe::epi::Frame) {
-        fn texture<'a>(app: &mut App, ctx: &egui::Context) -> (egui::TextureHandle, egui::Vec2) {
-            if app.working.load(std::sync::atomic::Ordering::SeqCst) {
-                app.wait_request();
-            }
-            if let Some(img) = app.image.lock().unwrap().take() {
+    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+        fn texture(
+            app: &mut App,
+            ctx: &egui::Context,
+            frame: &epi::Frame,
+        ) -> Option<(egui::TextureHandle, egui::Vec2)> {
+            let img = { app.image.lock().unwrap().take() };
+            if let Some(img) = img {
                 let size = img.size;
                 let handle = ctx.load_texture("main fractal", img);
                 app.texture = Some((handle, egui::Vec2::new(size[0] as _, size[1] as _)));
+                if app.try_redraw {
+                    app.request_redraw(frame.clone());
+                }
             }
             if let Some(texture) = &app.texture {
-                return texture.clone();
+                return Some(texture.clone());
             }
-            app.request_redraw();
-            app.wait_request();
-            texture(app, ctx)
+            app.request_redraw(frame.clone());
+            None
         }
-        let (texture, size) = texture(self, ctx);
+        let texture = texture(self, ctx, frame);
 
         let previous_state = self.state.clone();
 
@@ -138,20 +138,24 @@ impl epi::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
-                let aspect_ratio = size.x / size.y;
-                let available_size = ui.available_size();
-                let mut space = available_size;
-                space.y = cmp::min(F32Ord(available_size.y), F32Ord(space.x / aspect_ratio)).0;
-                space.x = cmp::min(F32Ord(available_size.x), F32Ord(space.y * aspect_ratio)).0;
-                ui.allocate_space(egui::Vec2::new(
-                    (available_size.x - space.x) / 2.0,
-                    (available_size.y - space.y) / 2.0,
-                ));
-                ui.image(&texture, space);
+                if let Some((texture, size)) = texture {
+                    let aspect_ratio = size.x / size.y;
+                    let available_size = ui.available_size();
+                    let mut space = available_size;
+                    space.y = cmp::min(F32Ord(available_size.y), F32Ord(space.x / aspect_ratio)).0;
+                    space.x = cmp::min(F32Ord(available_size.x), F32Ord(space.y * aspect_ratio)).0;
+                    let margin = egui::Vec2::new(
+                        (available_size.x - space.x) / 2.0,
+                        (available_size.y - space.y) / 2.0,
+                    );
+                    egui::Frame::none().margin(margin).show(ui, |ui| {
+                        ui.image(&texture, space);
+                    });
+                }
             });
 
         if self.state != previous_state {
-            self.request_redraw();
+            self.request_redraw(frame.clone());
         }
     }
 }
