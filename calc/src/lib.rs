@@ -7,6 +7,8 @@
 
 #[cfg(feature = "spirv")]
 use spirv_std::num_traits::Float;
+#[cfg(feature = "spirv")]
+use core::prelude::rust_2021::*;
 
 use core::ops::{Add, Mul};
 use core::fmt::Display;
