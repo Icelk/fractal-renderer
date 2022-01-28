@@ -1,4 +1,4 @@
-use crate::{Algo, Config, Imaginary};
+use crate::{Algo, Config, Imaginary, Options};
 use std::cmp;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc, Mutex};
@@ -25,7 +25,7 @@ impl Ord for F32Ord {
 }
 
 struct App {
-    state: Config,
+    state: Options,
     gui_on: bool,
     image: Arc<Mutex<Option<egui::ColorImage>>>,
     texture: Option<(egui::TextureHandle, eframe::egui::Vec2)>,
@@ -43,10 +43,10 @@ impl App {
         self.working
             .store(true, std::sync::atomic::Ordering::SeqCst);
         self.redraw_channel
-            .send((self.state.clone(), frame))
+            .send((self.state.config.clone(), frame))
             .unwrap();
     }
-    fn new(config: Config) -> Self {
+    fn new(options: Options) -> Self {
         let (redraw_channel, rx) = mpsc::channel::<(Config, epi::Frame)>();
 
         let image = Arc::new(Mutex::new(None));
@@ -85,7 +85,7 @@ impl App {
         });
 
         Self {
-            state: config,
+            state: options,
             gui_on: true,
             image,
             texture: None,
@@ -124,63 +124,14 @@ impl epi::App for App {
         }
         let texture = texture(self, ctx, frame);
 
-        let previous_state = self.state.clone();
+        let previous_state = self.state.config.clone();
+
+        let config = &mut self.state.config;
 
         if ctx.input().key_down(egui::Key::M) {
             self.gui_on = !self.gui_on;
         }
 
-        // Input
-        {
-            // Movement
-            #[allow(unused_braces, clippy::blocks_in_if_conditions)]
-            if !ctx.wants_keyboard_input() {
-                let dt = { ctx.input().predicted_dt } as f64;
-
-                let scale_x = 1.0 / self.state.scale.re;
-                let scale_y = 1.0 / self.state.scale.im;
-                // move
-                if { ctx.input().key_down(egui::Key::ArrowLeft) } {
-                    self.state.pos.re -= scale_x * dt * 0.5;
-                }
-                if { ctx.input().key_down(egui::Key::ArrowRight) } {
-                    self.state.pos.re += scale_y * dt * 0.5;
-                }
-                if { ctx.input().key_down(egui::Key::ArrowUp) } {
-                    self.state.pos.im -= scale_x * dt * 0.5;
-                }
-                if { ctx.input().key_down(egui::Key::ArrowDown) } {
-                    self.state.pos.im += scale_y * dt * 0.5;
-                }
-                // scale
-                {
-                    let delta = ctx.input().scroll_delta.y;
-                    if delta >= 1.0 || delta <= -1.0 {
-                        self.state.scale = self.state.scale
-                            * if delta < 0.0 {
-                                let delta = -delta;
-                                let scale_diff =
-                                    (F32Ord((delta / 10.0 + 1.0).log10() / 2.0).min(F32Ord(1.0))).0;
-
-                                1.0 - scale_diff as f64
-                            } else {
-                                1.0 + (delta as f64 / 80.0)
-                            };
-                    }
-                }
-                // screenshot
-                #[cfg(feature = "avif")]
-                if { ctx.input().key_pressed(egui::Key::S) } {
-                    let mut config = self.state.clone();
-                    std::thread::spawn(move || {
-                        config.width *= 2;
-                        config.height *= 2;
-                        let image = crate::get_image(&config);
-                        crate::write_image(&config, image);
-                    });
-                }
-            }
-        }
         if self.gui_on {
             // So the combo box works (needs to have space below)
             egui::TopBottomPanel::top("controls").show(ctx, |ui| {
@@ -192,24 +143,24 @@ impl epi::App for App {
                         |ui| {
                             {
                                 egui::ComboBox::from_id_source("type")
-                                    .selected_text(match self.state.algo {
+                                    .selected_text(match config.algo {
                                         crate::Algo::Mandelbrot => "Mandelbrot",
                                         crate::Algo::Julia(_) => "Julia",
                                         crate::Algo::BarnsleyFern => "Fern",
                                     })
                                     .show_ui(ui, |ui| {
                                         ui.selectable_value(
-                                            &mut self.state.algo,
+                                            &mut config.algo,
                                             Algo::Mandelbrot,
                                             "Mandelbrot",
                                         );
                                         ui.selectable_value(
-                                            &mut self.state.algo,
+                                            &mut config.algo,
                                             Algo::Julia(Imaginary::ZERO),
                                             "Julia",
                                         );
                                         ui.selectable_value(
-                                            &mut self.state.algo,
+                                            &mut config.algo,
                                             Algo::BarnsleyFern,
                                             "Fern",
                                         );
@@ -218,11 +169,11 @@ impl epi::App for App {
                             // Resolution
                             {
                                 ui.add(
-                                    egui::DragValue::new(&mut self.state.width)
+                                    egui::DragValue::new(&mut config.width)
                                         .clamp_range(16..=u32::MAX),
                                 );
                                 ui.add(
-                                    egui::DragValue::new(&mut self.state.height)
+                                    egui::DragValue::new(&mut config.height)
                                         .clamp_range(16..=u32::MAX),
                                 );
                             }
@@ -230,36 +181,33 @@ impl epi::App for App {
                             // Iterations
                             ui.separator();
                             {
-                                let mut iters = self.state.iterations();
-                                if ui.add(egui::DragValue::new(&mut iters)).changed() {
-                                    self.state.iterations = Some(iters)
-                                }
+                                ui.add(egui::DragValue::new(&mut config.iterations));
                             }
                             // Exposure
-                            if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
+                            if let Algo::Mandelbrot | Algo::Julia(_) = config.algo {
                                 ui.separator();
                                 ui.add(
-                                    egui::Slider::new(&mut self.state.exposure, 0.01..=50.0)
+                                    egui::Slider::new(&mut config.exposure, 0.01..=50.0)
                                         .logarithmic(true),
                                 );
                             }
                             // Color weight
-                            if let Algo::BarnsleyFern = self.state.algo {
+                            if let Algo::BarnsleyFern = config.algo {
                                 ui.separator();
                                 ui.add(
-                                    egui::Slider::new(&mut self.state.color_weight, 0.0001..=10.0)
+                                    egui::Slider::new(&mut config.color_weight, 0.0001..=10.0)
                                         .logarithmic(true),
                                 );
                             }
                             // Flags
                             ui.separator();
-                            if let Algo::Mandelbrot | Algo::Julia(_) = self.state.algo {
-                                ui.checkbox(&mut self.state.inside, "Coloured inside");
-                                ui.checkbox(&mut self.state.smooth, "Smoothed");
+                            if let Algo::Mandelbrot | Algo::Julia(_) = config.algo {
+                                ui.checkbox(&mut config.inside, "Coloured inside");
+                                ui.checkbox(&mut config.smooth, "Smoothed");
                             }
                             ui.separator();
                             // julia pos
-                            if let Algo::Julia(julia_c) = &mut self.state.algo {
+                            if let Algo::Julia(julia_c) = &mut config.algo {
                                 let mut value =
                                     egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
 
@@ -279,16 +227,16 @@ impl epi::App for App {
                                 julia_c.im = value.y as f64;
                             }
                             // info
-                            ui.label(format!("{:.3}", self.state.scale.re));
-                            if let Algo::Julia(mut value) = self.state.algo {
+                            ui.label(format!("{:.3}", config.scale.re));
+                            if let Algo::Julia(mut value) = config.algo {
                                 let initial_value = value;
                                 ui.horizontal_wrapped(|ui| {
                                     ui.add(
-                                        egui::DragValue::new(&mut self.state.pos.re)
+                                        egui::DragValue::new(&mut config.pos.re)
                                             .max_decimals(6),
                                     );
                                     ui.add(
-                                        egui::DragValue::new(&mut self.state.pos.im)
+                                        egui::DragValue::new(&mut config.pos.im)
                                             .max_decimals(6),
                                     );
                                     ui.label("i");
@@ -298,15 +246,15 @@ impl epi::App for App {
                                     ui.label("i");
 
                                     if value != initial_value {
-                                        self.state.algo = Algo::Julia(value);
+                                        config.algo = Algo::Julia(value);
                                     }
                                 });
                             } else {
                                 ui.add(
-                                    egui::DragValue::new(&mut self.state.pos.re).max_decimals(6),
+                                    egui::DragValue::new(&mut config.pos.re).max_decimals(6),
                                 );
                                 ui.add(
-                                    egui::DragValue::new(&mut self.state.pos.im).max_decimals(6),
+                                    egui::DragValue::new(&mut config.pos.im).max_decimals(6),
                                 );
                                 ui.label("i");
                             }
@@ -314,13 +262,13 @@ impl epi::App for App {
                     )
                 });
             });
-            if self.state != previous_state {
-                if self.state.algo.is_different(&previous_state.algo) {
+            if config != &previous_state {
+                if config.algo.is_different(&previous_state.algo) {
                     let new_state = Config {
-                        algo: self.state.algo.clone(),
+                        algo: config.algo.clone(),
                         ..Default::default()
                     };
-                    self.state = new_state;
+                    *config = new_state;
                 }
                 self.request_redraw(frame.clone());
             }
@@ -344,12 +292,64 @@ impl epi::App for App {
                     });
                 }
             });
+        // Input
+        {
+            let config = &mut self.state.config;
+            // Movement
+            #[allow(unused_braces, clippy::blocks_in_if_conditions)]
+            if !ctx.wants_keyboard_input() {
+                let dt = { ctx.input().predicted_dt } as f64;
+
+                let scale_x = 1.0 / config.scale.re;
+                let scale_y = 1.0 / config.scale.im;
+                // move
+                if { ctx.input().key_down(egui::Key::ArrowLeft) } {
+                    config.pos.re -= scale_x * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowRight) } {
+                    config.pos.re += scale_y * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowUp) } {
+                    config.pos.im -= scale_x * dt * 0.5;
+                }
+                if { ctx.input().key_down(egui::Key::ArrowDown) } {
+                    config.pos.im += scale_y * dt * 0.5;
+                }
+                // scale
+                {
+                    let delta = ctx.input().scroll_delta.y;
+                    if delta >= 1.0 || delta <= -1.0 {
+                        config.scale = config.scale
+                            * if delta < 0.0 {
+                                let delta = -delta;
+                                let scale_diff =
+                                    (F32Ord((delta / 10.0 + 1.0).log10() / 2.0).min(F32Ord(1.0))).0;
+
+                                1.0 - scale_diff as f64
+                            } else {
+                                1.0 + (delta as f64 / 80.0)
+                            };
+                    }
+                }
+                // screenshot
+                #[cfg(feature = "avif")]
+                if { ctx.input().key_pressed(egui::Key::S) } {
+                    let mut options = self.state.clone();
+                    std::thread::spawn(move || {
+                        options.config.width *= 2;
+                        options.config.height *= 2;
+                        let image = crate::get_image(&options.config);
+                        crate::write_image(&options, image);
+                    });
+                }
+            }
+        }
     }
 }
 
-pub fn start(config: Config) {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(App::new(config)), options);
+pub fn start(options: Options) {
+    let native_opts = eframe::NativeOptions::default();
+    eframe::run_native(Box::new(App::new(options)), native_opts);
 }
 
 /// Taken from

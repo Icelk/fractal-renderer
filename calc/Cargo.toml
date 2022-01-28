@@ -1,0 +1,16 @@
+[package]
+name = "fractal-renderer-calc"
+version = "0.2.0"
+authors = ["Icelk <main@icelk.dev>"]
+edition = "2021"
+rust-version = "1.56"
+description = "Core Mandelbrot and Julia set solver."
+readme = "../README.md"
+repository = "https://github.com/Icelk/fractal-renderer/"
+license = "Apache-2.0 OR MIT"
+
+[dependencies]
+spirv-std = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu/", features = ["glam"] }
+
+[features]
+spirv = ["spirv-std"]

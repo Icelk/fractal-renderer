@@ -15,13 +15,14 @@ categories = ["algorithms", "command-line-utilities", "mathematics", "visualizat
 crate-type = ["dylib", "lib"]
 
 [workspace]
-members = ["builder", "shader"]
+members = ["builder", "shader", "calc"]
 
 [dependencies]
+calc = { version = "0.2", path = "calc", package = "fractal-renderer-calc" }
 ravif = { optional = true, version = "0.8.8" }
-clap = { optional = true, version = "^3" }
-rayon = { optional = true, version = "^1.5" }
-rand = { optional = true, version = "0.8.4", features = ["small_rng"], default-features = false }
+clap = { version = "^3" }
+rayon = { version = "^1.5" }
+rand = { version = "0.8.4", features = ["small_rng"] }
 
 spirv-builder = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu", rev = "31e3fdb", default-features = false, features = ["watch", "use-compiled-tools"] }
 futures = { optional = true, version = "0.3", default-features = false, features = ["std", "executor"] }
@@ -33,10 +34,8 @@ eframe = { optional = true, git = "https://github.com/emilk/egui/" }
 image = { optional = true, version = "^0.23", default-features = false }
 
 [features]
-default = ["bin", "avif", "gui", "fern"]
+default = ["avif", "gui"]
 
-bin = ["clap", "rayon"]
-fern = ["rand"]
 avif = ["ravif"]
 # Run on the GPU
 gpu = ["spirv-builder", "futures", "wgpu", "winit", "strum"]

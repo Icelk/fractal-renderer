@@ -3,18 +3,18 @@ pub use lib::*;
 
 fn main() {
     #[cfg(feature = "avif")]
-    let config = lib::get_config();
+    let options = lib::get_options();
 
     #[cfg(feature = "gui")]
-    if config.gui {
-        lib::gui::start(config);
+    if options.gui {
+        lib::gui::start(options);
         return;
     }
 
     #[cfg(feature = "avif")]
     {
-        let contents = lib::get_image(&config);
-        lib::write_image(&config, contents);
+        let contents = lib::get_image(&options.config);
+        lib::write_image(&options, contents);
     }
     #[cfg(not(feature = "avif"))]
     {

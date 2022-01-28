@@ -372,7 +372,6 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 name = "compute-shader"
 version = "0.1.0"
 dependencies = [
- "fractal-renderer",
  "spirv-std",
 ]
 
@@ -804,6 +803,7 @@ version = "0.1.0"
 dependencies = [
  "clap 3.0.12",
  "eframe",
+ "fractal-renderer-calc",
  "futures",
  "image",
  "rand",
@@ -813,6 +813,13 @@ dependencies = [
  "strum 0.23.0",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "fractal-renderer-calc"
+version = "0.2.0"
+dependencies = [
+ "spirv-std",
 ]
 
 [[package]]

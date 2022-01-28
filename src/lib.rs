@@ -1,16 +1,8 @@
-#[cfg(feature = "bin")]
-use std::fmt::Display;
-#[cfg(feature = "bin")]
 use std::io::Write;
-use core::ops::{Add, Mul};
-use core::str::FromStr;
-use core::prelude::rust_2021::*;
+pub use calc::{Config, Imaginary, RGB, Algo, get_recursive_pixel};
 
-#[cfg(feature = "bin")]
 use clap::{Arg, ArgGroup};
-#[cfg(feature = "fern")]
 use rand::{Rng, SeedableRng};
-#[cfg(feature = "bin")]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[cfg(feature = "gpu")]
@@ -20,69 +12,14 @@ pub mod compute;
 #[path ="gui.rs"]
 pub mod gui;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RGB {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
-impl RGB {
-    pub const fn new(r: u8, b: u8, g: u8) -> Self {
-        Self { r,g,b }
-    }
-    #[cfg(feature = "avif")]
-    pub const fn transmute(me: &[Self]) -> &[ravif::RGB8] {
-        unsafe { std::mem::transmute(me) }
-    }
-}
 #[cfg(feature = "avif")]
-impl From<RGB> for ravif::RGB8 {
-    fn from(rgb: RGB) -> Self {
-        Self::new(rgb.r, rgb.g, rgb.b)
-    }
+pub const fn transmute_rgb_slice(me: &[RGB]) -> &[ravif::RGB8] {
+    unsafe { std::mem::transmute(me) }
 }
 
-const BLACK: RGB = RGB::new(0, 0, 0);
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Algo {
-    Mandelbrot,
-    BarnsleyFern,
-    Julia(Imaginary),
-}
-impl Algo {
-    fn is_different(&self, other: &Self) -> bool {
-        if let Self::Julia(_) = self {
-            if let Self::Julia(_) = other {
-                return false;
-            }
-        }
-        !self.eq(other)
-    }
-}
-pub enum AlgoParseError {
-    /// Use one of the variants.
-    Incorrect,
-}
-#[cfg(feature = "bin")]
-impl Display for AlgoParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid algorithm name")
-    }
-}
-impl FromStr for Algo {
-    type Err = AlgoParseError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(if s.eq_ignore_ascii_case("mandelbrot") {
-            Self::Mandelbrot
-        } else if s.eq_ignore_ascii_case("fern") || s.eq_ignore_ascii_case("barnsleyfern") {
-            Self::BarnsleyFern
-        } else if s.eq_ignore_ascii_case("julia") {
-            Self::Julia(Imaginary { re: 0.0, im: 0.0 })
-        } else {
-            return Err(AlgoParseError::Incorrect);
-        })
-    }
+#[cfg(feature = "avif")]
+pub fn rgb_convert(rgb: RGB) -> ravif::RGB8 {
+    ravif::RGB8::new(rgb.r, rgb.g, rgb.b)
 }
 
 fn parse_hex_rgb(s: &str) -> RGB {
@@ -94,8 +31,7 @@ fn parse_hex_rgb(s: &str) -> RGB {
     RGB::new(r, g, b)
 }
 
-#[cfg(feature = "bin")]
-pub fn get_config() -> Config {
+pub fn get_options() -> Options {
     let app = clap::App::new("fractal-renderer")
         .about("Set `-d` for a more traditional look.")
         .arg(
@@ -272,10 +208,11 @@ pub fn get_config() -> Config {
         eprintln!("The gui feature isn't enabled! Remove the GUI argument.");
     }
 
-    Config {
+    let reference = Config::new(algo.clone());
+    let config = Config {
         width,
         height,
-        iterations,
+        iterations: iterations.unwrap_or(reference.iterations),
         limit,
         stable_limit,
         pos,
@@ -283,99 +220,34 @@ pub fn get_config() -> Config {
         exposure,
         inside: !inside_disabled,
         smooth: !unsmooth,
-        primary_color,
-        secondary_color,
-        open,
-        filename,
-        algo,
+        primary_color: primary_color.unwrap_or(reference.primary_color),
+        secondary_color: secondary_color.unwrap_or(reference.secondary_color),
         color_weight,
+        algo,
+    };
 
-        gui,
+    Options {
+        config,
+        filename,
+        open,
+        gui
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Config {
-    pub width: u32,
-    pub height: u32,
-    pub iterations: Option<u32>,
-    pub limit: f64,
-    pub stable_limit: f64,
-    pub pos: Imaginary,
-    pub scale: Imaginary,
-    pub exposure: f64,
-    pub inside: bool,
-    pub smooth: bool,
-    pub primary_color: Option<RGB>,
-    pub secondary_color: Option<RGB>,
+pub struct Options {
+    pub config: Config,
+
     pub filename: String,
     pub open: bool,
-    pub algo: Algo,
-    pub color_weight: f64,
-
     pub gui: bool,
-}
-impl Config {
-    fn iterations(&self) -> u32 {
-        if let Some(iters) = self.iterations {
-            return iters;
-        }
-        match self.algo {
-            Algo::Mandelbrot | Algo::Julia(_) => 50,
-            Algo::BarnsleyFern => 10_000_000,
-        }
-    }
-    fn primary_color(&self) -> RGB {
-        if let Some(color) = self.primary_color {
-            return color;
-        }
-
-        match self.algo {
-            Algo::Mandelbrot | Algo::Julia(_) => RGB::new(40, 40, 255),
-            Algo::BarnsleyFern => RGB::new(4, 100, 3),
-        }
-    }
-    fn secondary_color(&self) -> RGB {
-        if let Some(color) = self.secondary_color {
-            return color;
-        }
-
-        match self.algo {
-            Algo::Mandelbrot | Algo::Julia(_) => RGB::new(240, 170, 0),
-            Algo::BarnsleyFern => RGB::new(240, 240, 240),
-        }
-    }
-}
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            width: 2000,
-            height: 1000,
-            iterations: None,
-            limit: 2.0_f64.powi(16),
-            stable_limit: 2.0,
-            pos: Imaginary::ZERO,
-            scale: Imaginary::ONE * 0.4,
-            exposure: 2.0,
-            inside: true,
-            smooth: true,
-            primary_color: None,
-            secondary_color: None,
-            filename: "output.avif".to_owned(),
-            open: false,
-            algo: Algo::Mandelbrot,
-            color_weight: 0.01,
-
-            gui: false,
-        }
-    }
 }
 
 #[cfg(feature = "avif")]
-pub fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config) -> Vec<u8> {
+pub fn image_to_data(image: Image, image_config: &ravif::Config, options: &Options) -> Vec<u8> {
     println!("Starting encode.");
     let (data, _) = ravif::encode_rgb(image.into(), image_config).expect("encoding failed");
-    println!("Finished encode. Writing file {:?}.", config.filename);
+    println!("Finished encode. Writing file {:?}.", options.filename);
     data
 }
 
@@ -387,7 +259,7 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
                 compute::start();
             }
 
-            #[cfg(all(not(feature = "gpu"), feature = "bin"))]
+            #[cfg(not(feature = "gpu"))]
             {
             let image: Vec<_> = (0..config.height)
                 // Only one parallell iter, else, it'd be less efficient.
@@ -407,7 +279,7 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
         }
         Algo::BarnsleyFern => {
             let mut contents =
-                vec![config.secondary_color(); (config.width * config.height) as usize];
+                vec![config.secondary_color; (config.width * config.height) as usize];
 
             let mut image =
                 Image::new(&mut contents, config.width as usize, config.height as usize);
@@ -420,7 +292,8 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
 }
 
 #[cfg(feature = "avif")]
-pub fn write_image(config: &Config, mut contents: Vec<RGB>) {
+pub fn write_image(options: &Options, mut contents: Vec<RGB>) {
+    let config = &options.config;
     let img_config = ravif::Config {
         speed: 8,
         quality: 100.0,
@@ -435,13 +308,13 @@ pub fn write_image(config: &Config, mut contents: Vec<RGB>) {
         config.height as usize,
     );
 
-    let data = image_to_data(img, &img_config, config);
+    let data = image_to_data(img, &img_config, options);
     let mut file =
-        std::fs::File::create(&config.filename).expect("failed to create output image file");
+        std::fs::File::create(&options.filename).expect("failed to create output image file");
     file.write_all(&data).expect("failed to write image data");
     file.flush().expect("failed to flush file");
 
-    if config.open {
+    if options.open {
         fn start_shell(cmd: &str, command_arg: &str, exec: &str) {
             std::process::Command::new(cmd)
                 .arg(command_arg)
@@ -451,118 +324,20 @@ pub fn write_image(config: &Config, mut contents: Vec<RGB>) {
         }
         #[cfg(windows)]
         {
-            start_shell("cmd", "/C", &format!("start {}", config.filename));
+            start_shell("cmd", "/C", &format!("start {}", options.filename));
         }
         #[cfg(target_os = "macos")]
         {
-            start_shell("sh", "-c", &format!("open {:?}", config.filename));
+            start_shell("sh", "-c", &format!("open {:?}", options.filename));
         };
         #[cfg(all(not(target_os = "macos"), unix))]
         {
-            start_shell("sh", "-c", &format!("xdg-open {:?}", config.filename));
+            start_shell("sh", "-c", &format!("xdg-open {:?}", options.filename));
         };
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Imaginary {
-    pub re: f64,
-    pub im: f64,
-}
-impl Imaginary {
-    const ZERO: Self = Self { re: 0.0, im: 0.0 };
-    const ONE: Self = Self { re: 1.0, im: 1.0 };
-    #[inline(always)]
-    pub fn square(self) -> Self {
-        let re = (self.re * self.re) - (self.im * self.im);
-        let im = 2.0 * self.re * self.im;
 
-        Self { re, im }
-    }
-    #[inline(always)]
-    pub fn squared_distance(self) -> f64 {
-        self.re * self.re + self.im * self.im
-    }
-}
-impl Add for Imaginary {
-    type Output = Self;
-    #[inline(always)]
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            re: self.re + rhs.re,
-            im: self.im + rhs.im,
-        }
-    }
-}
-impl Mul<f64> for Imaginary {
-    type Output = Self;
-    fn mul(self, rhs: f64) -> Self::Output {
-        Self {
-            re: self.re * rhs,
-            im: self.im * rhs,
-        }
-    }
-}
-
-#[inline(always)]
-fn coord_to_space(coord: f64, max: f64, offset: f64, pos: f64, scale: f64) -> f64 {
-    ((coord / max) - offset) / scale + pos
-}
-#[inline(always)]
-fn xy_to_imaginary(
-    x: u32,
-    y: u32,
-    width: f64,
-    height: f64,
-    pos: &Imaginary,
-    scale: &Imaginary,
-) -> Imaginary {
-    let re = coord_to_space(x as f64, height, (width / height) / 2.0, pos.re, scale.re);
-    let im = coord_to_space(y as f64, height, 0.5, pos.im, scale.im);
-    Imaginary { re, im }
-}
-
-pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
-    fn unreachable() -> ! {
-        panic!("called get_recursive_pixel when algo wasn't a recursive pixel one.")
-    }
-
-    let start = xy_to_imaginary(
-        x,
-        y,
-        config.width as f64,
-        config.height as f64,
-        &config.pos,
-        &config.scale,
-    );
-    let (mandelbrot, iters) = match config.algo {
-        Algo::Mandelbrot => recursive(config.iterations(), start, start, config.limit),
-        Algo::Julia(c) => recursive(config.iterations(), start, c, config.limit),
-        _ => unreachable(),
-    };
-
-    let dist = mandelbrot.squared_distance();
-
-    if dist > config.stable_limit {
-        let mut iters = iters as f64;
-
-        if config.smooth {
-            // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
-
-            let log_zn = f64::log2(dist.sqrt()) / 2.0;
-            let nu = f64::log2(log_zn);
-
-            iters += 1.0 - nu;
-        }
-
-        let mult = iters as f64 / config.iterations() as f64 * config.exposure;
-        color_multiply(config.primary_color(), mult)
-    } else if config.inside {
-        color_multiply(config.secondary_color(), dist)
-    } else {
-        BLACK
-    }
-}
 
 pub struct Image<'a> {
     contents: &'a mut [RGB],
@@ -608,38 +383,10 @@ impl<'a> Image<'a> {
 #[cfg(feature = "avif")]
 impl<'a> From<Image<'a>> for ravif::Img<&'a [ravif::RGB8]> {
     fn from(me: Image<'a>) -> Self {
-        ravif::Img::new(RGB::transmute(me.contents), me.width, me.height)
+        ravif::Img::new(transmute_rgb_slice(me.contents), me.width, me.height)
     }
-}
-fn color_multiply(color: RGB, mult: f64) -> RGB {
-    RGB::new(
-        (color.r as f64 * mult) as u8,
-        (color.g as f64 * mult) as u8,
-        (color.b as f64 * mult) as u8,
-    )
 }
 
-/// `limit` is distance from center considered out of bounds.
-///
-/// If `c == start`, this is a Mandelbrot set. If `c` is constant, it's a Julia set.
-///
-/// # Return
-///
-/// Returns the final position and the number of iterations to get there.
-#[inline(always)]
-pub fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, u32) {
-    let squared = limit * limit;
-    let mut previous = start;
-    for i in 0..iterations {
-        let next = previous.square() + c;
-        let dist = next.squared_distance();
-        if dist > squared {
-            return (next, i);
-        }
-        previous = next;
-    }
-    (previous, iterations)
-}
 #[inline(always)]
 pub fn fern(config: &Config, image: &mut Image) {
     let width = config.width as f64;
@@ -653,9 +400,9 @@ pub fn fern(config: &Config, image: &mut Image) {
 
     let mut rng = rand::rngs::SmallRng::from_entropy();
 
-    let color = config.primary_color();
+    let color = config.primary_color;
 
-    for _ in 0..config.iterations() {
+    for _ in 0..config.iterations {
         image.subtract_pixel(
             (((x - config.pos.re) * effective_scale_x) + width / 2.0) as usize,
             // 5.0 seems to work fine
