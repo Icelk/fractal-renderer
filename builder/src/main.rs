@@ -7,7 +7,7 @@ use std::path::Path;
 fn build_shader(path_to_crate: &str, codegen_names: bool) -> Result<(), Box<dyn Error>> {
     let builder_dir = &Path::new(env!("CARGO_MANIFEST_DIR"));
     let path_to_crate = builder_dir.join(path_to_crate);
-    let result = SpirvBuilder::new(path_to_crate, "spirv-unknown-vulkan1.2").build()?;
+    let result = SpirvBuilder::new(path_to_crate, "spirv-unknown-vulkan1.1").build()?;
     if codegen_names {
         let out_dir = env::var_os("OUT_DIR").unwrap();
         let dest_path = Path::new(&out_dir).join("entry_points.rs");
