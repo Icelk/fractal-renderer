@@ -18,10 +18,10 @@ crate-type = ["dylib", "lib"]
 members = ["builder", "shader"]
 
 [dependencies]
-ravif = "0.8.8"
-clap = "^3"
-rayon = "^1.5"
-rand = { version = "0.8.4", features = ["small_rng"] }
+ravif = { optional = true, version = "0.8.8" }
+clap = { optional = true, version = "^3" }
+rayon = { optional = true, version = "^1.5" }
+rand = { optional = true, version = "0.8.4", features = ["small_rng"], default-features = false }
 
 spirv-builder = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu", rev = "31e3fdb", default-features = false, features = ["watch", "use-compiled-tools"] }
 futures = { optional = true, version = "0.3", default-features = false, features = ["std", "executor"] }
@@ -33,10 +33,11 @@ eframe = { optional = true, git = "https://github.com/emilk/egui/" }
 image = { optional = true, version = "^0.23", default-features = false }
 
 [features]
-default = ["avif", "gui"]
+default = ["bin", "avif", "gui", "fern"]
 
-# TODO: large change, since we'll have to move to not using ravif's RGB.
-avif = []
+bin = ["clap", "rayon"]
+fern = ["rand"]
+avif = ["ravif"]
 # Run on the GPU
 gpu = ["spirv-builder", "futures", "wgpu", "winit", "strum"]
 gui = ["eframe", "image"]

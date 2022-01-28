@@ -1,10 +1,9 @@
 pub mod lib;
 pub use lib::*;
 
-use lib::{get_config, get_image,  write_image};
-
 fn main() {
-    let config = get_config();
+    #[cfg(feature = "avif")]
+    let config = lib::get_config();
 
     #[cfg(feature = "gui")]
     if config.gui {
@@ -12,6 +11,13 @@ fn main() {
         return;
     }
 
-    let contents = get_image(&config);
-    write_image(&config, contents);
+    #[cfg(feature = "avif")]
+    {
+        let contents = lib::get_image(&config);
+        lib::write_image(&config, contents);
+    }
+    #[cfg(not(feature = "avif"))]
+    {
+        eprintln!("Failed to write file; avif feature isn't enabled.")
+    }
 }

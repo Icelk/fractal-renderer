@@ -19,7 +19,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 }
 
 pub fn start() {
-    let shader_binary = compiled(None);
+    let shader_binary = compiled();
 
     block_on(start_internal(shader_binary));
 }

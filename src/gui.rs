@@ -169,6 +169,7 @@ impl epi::App for App {
                     }
                 }
                 // screenshot
+                #[cfg(feature = "avif")]
                 if { ctx.input().key_pressed(egui::Key::S) } {
                     let mut config = self.state.clone();
                     std::thread::spawn(move || {

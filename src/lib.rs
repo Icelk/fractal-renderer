@@ -1,11 +1,16 @@
+#[cfg(feature = "bin")]
 use std::fmt::Display;
+#[cfg(feature = "bin")]
 use std::io::Write;
-use std::ops::{Add, Mul};
-use std::process::Command;
-use std::str::FromStr;
+use core::ops::{Add, Mul};
+use core::str::FromStr;
+use core::prelude::rust_2021::*;
 
+#[cfg(feature = "bin")]
 use clap::{Arg, ArgGroup};
+#[cfg(feature = "fern")]
 use rand::{Rng, SeedableRng};
+#[cfg(feature = "bin")]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[cfg(feature = "gpu")]
@@ -15,7 +20,29 @@ pub mod compute;
 #[path ="gui.rs"]
 pub mod gui;
 
-const BLACK: ravif::RGB8 = ravif::RGB8::new(0, 0, 0);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RGB {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+impl RGB {
+    pub const fn new(r: u8, b: u8, g: u8) -> Self {
+        Self { r,g,b }
+    }
+    #[cfg(feature = "avif")]
+    pub const fn transmute(me: &[Self]) -> &[ravif::RGB8] {
+        unsafe { std::mem::transmute(me) }
+    }
+}
+#[cfg(feature = "avif")]
+impl From<RGB> for ravif::RGB8 {
+    fn from(rgb: RGB) -> Self {
+        Self::new(rgb.r, rgb.g, rgb.b)
+    }
+}
+
+const BLACK: RGB = RGB::new(0, 0, 0);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Algo {
@@ -37,6 +64,7 @@ pub enum AlgoParseError {
     /// Use one of the variants.
     Incorrect,
 }
+#[cfg(feature = "bin")]
 impl Display for AlgoParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "invalid algorithm name")
@@ -57,15 +85,16 @@ impl FromStr for Algo {
     }
 }
 
-fn parse_hex_rgb(s: &str) -> ravif::RGB8 {
+fn parse_hex_rgb(s: &str) -> RGB {
     let (p1, p2) = s.split_at(2);
     let (p2, p3) = p2.split_at(2);
     let r = u8::from_str_radix(p1, 16).expect("failed to parse hex color");
     let g = u8::from_str_radix(p2, 16).expect("failed to parse hex color");
     let b = u8::from_str_radix(p3, 16).expect("failed to parse hex color");
-    ravif::RGB8::new(r, g, b)
+    RGB::new(r, g, b)
 }
 
+#[cfg(feature = "bin")]
 pub fn get_config() -> Config {
     let app = clap::App::new("fractal-renderer")
         .about("Set `-d` for a more traditional look.")
@@ -277,8 +306,8 @@ pub struct Config {
     pub exposure: f64,
     pub inside: bool,
     pub smooth: bool,
-    pub primary_color: Option<ravif::RGB8>,
-    pub secondary_color: Option<ravif::RGB8>,
+    pub primary_color: Option<RGB>,
+    pub secondary_color: Option<RGB>,
     pub filename: String,
     pub open: bool,
     pub algo: Algo,
@@ -296,24 +325,24 @@ impl Config {
             Algo::BarnsleyFern => 10_000_000,
         }
     }
-    fn primary_color(&self) -> ravif::RGB8 {
+    fn primary_color(&self) -> RGB {
         if let Some(color) = self.primary_color {
             return color;
         }
 
         match self.algo {
-            Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(40, 40, 255),
-            Algo::BarnsleyFern => ravif::RGB8::new(4, 100, 3),
+            Algo::Mandelbrot | Algo::Julia(_) => RGB::new(40, 40, 255),
+            Algo::BarnsleyFern => RGB::new(4, 100, 3),
         }
     }
-    fn secondary_color(&self) -> ravif::RGB8 {
+    fn secondary_color(&self) -> RGB {
         if let Some(color) = self.secondary_color {
             return color;
         }
 
         match self.algo {
-            Algo::Mandelbrot | Algo::Julia(_) => ravif::RGB8::new(240, 170, 0),
-            Algo::BarnsleyFern => ravif::RGB8::new(240, 240, 240),
+            Algo::Mandelbrot | Algo::Julia(_) => RGB::new(240, 170, 0),
+            Algo::BarnsleyFern => RGB::new(240, 240, 240),
         }
     }
 }
@@ -342,6 +371,7 @@ impl Default for Config {
     }
 }
 
+#[cfg(feature = "avif")]
 pub fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config) -> Vec<u8> {
     println!("Starting encode.");
     let (data, _) = ravif::encode_rgb(image.into(), image_config).expect("encoding failed");
@@ -349,9 +379,16 @@ pub fn image_to_data(image: Image, image_config: &ravif::Config, config: &Config
     data
 }
 
-pub fn get_image(config: &Config) -> Vec<ravif::RGB8> {
+pub fn get_image(config: &Config) -> Vec<RGB> {
     match config.algo {
         Algo::Mandelbrot | Algo::Julia(_) => {
+            #[cfg(feature = "gpu")]
+            {
+                compute::start();
+            }
+
+            #[cfg(all(not(feature = "gpu"), feature = "bin"))]
+            {
             let image: Vec<_> = (0..config.height)
                 // Only one parallell iter, else, it'd be less efficient.
                 .into_par_iter()
@@ -366,6 +403,7 @@ pub fn get_image(config: &Config) -> Vec<ravif::RGB8> {
                 .collect();
 
             image
+            }
         }
         Algo::BarnsleyFern => {
             let mut contents =
@@ -381,7 +419,8 @@ pub fn get_image(config: &Config) -> Vec<ravif::RGB8> {
     }
 }
 
-pub fn write_image(config: &Config, mut contents: Vec<ravif::RGB8>) {
+#[cfg(feature = "avif")]
+pub fn write_image(config: &Config, mut contents: Vec<RGB>) {
     let img_config = ravif::Config {
         speed: 8,
         quality: 100.0,
@@ -404,7 +443,7 @@ pub fn write_image(config: &Config, mut contents: Vec<ravif::RGB8>) {
 
     if config.open {
         fn start_shell(cmd: &str, command_arg: &str, exec: &str) {
-            Command::new(cmd)
+            std::process::Command::new(cmd)
                 .arg(command_arg)
                 .arg(exec)
                 .spawn()
@@ -483,7 +522,7 @@ fn xy_to_imaginary(
     Imaginary { re, im }
 }
 
-pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
+pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
     fn unreachable() -> ! {
         panic!("called get_recursive_pixel when algo wasn't a recursive pixel one.")
     }
@@ -526,19 +565,19 @@ pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> ravif::RGB8 {
 }
 
 pub struct Image<'a> {
-    contents: &'a mut [ravif::RGB8],
+    contents: &'a mut [RGB],
     width: usize,
     height: usize,
 }
 impl<'a> Image<'a> {
-    pub fn new(contents: &'a mut [ravif::RGB8], width: usize, height: usize) -> Self {
+    pub fn new(contents: &'a mut [RGB], width: usize, height: usize) -> Self {
         Self {
             contents,
             width,
             height,
         }
     }
-    pub fn pixel_mut(&mut self, x: usize, y: usize) -> Option<&mut ravif::RGB8> {
+    pub fn pixel_mut(&mut self, x: usize, y: usize) -> Option<&mut RGB> {
         if x > self.width {
             return None;
         }
@@ -548,14 +587,14 @@ impl<'a> Image<'a> {
         }
         self.contents.get_mut(index)
     }
-    fn subtract_pixel(&mut self, x: usize, y: usize, value: ravif::RGB8, amount: f64) {
+    fn subtract_pixel(&mut self, x: usize, y: usize, value: RGB, amount: f64) {
         let pixel = if let Some(p) = self.pixel_mut(x, y) {
             p
         } else {
             return;
         };
 
-        let new = ravif::RGB8::new(
+        let new = RGB::new(
             (pixel.r as f64 * 1.0 / ((((1.0 / (value.r as f64 / 255.0)) - 1.0) * amount) + 1.0))
                 as u8,
             (pixel.g as f64 * 1.0 / ((((1.0 / (value.g as f64 / 255.0)) - 1.0) * amount) + 1.0))
@@ -566,13 +605,14 @@ impl<'a> Image<'a> {
         *pixel = new;
     }
 }
+#[cfg(feature = "avif")]
 impl<'a> From<Image<'a>> for ravif::Img<&'a [ravif::RGB8]> {
     fn from(me: Image<'a>) -> Self {
-        ravif::Img::new(me.contents, me.width, me.height)
+        ravif::Img::new(RGB::transmute(me.contents), me.width, me.height)
     }
 }
-fn color_multiply(color: ravif::RGB8, mult: f64) -> ravif::RGB8 {
-    ravif::RGB8::new(
+fn color_multiply(color: RGB, mult: f64) -> RGB {
+    RGB::new(
         (color.r as f64 * mult) as u8,
         (color.g as f64 * mult) as u8,
         (color.b as f64 * mult) as u8,
