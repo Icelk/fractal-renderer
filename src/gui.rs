@@ -1,4 +1,4 @@
-use crate::{Algo, Config, Imaginary, Options};
+use crate::{Algo, Config, Options};
 use std::cmp;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc, Mutex};
@@ -145,7 +145,7 @@ impl epi::App for App {
                                 egui::ComboBox::from_id_source("type")
                                     .selected_text(match config.algo {
                                         crate::Algo::Mandelbrot => "Mandelbrot",
-                                        crate::Algo::Julia(_) => "Julia",
+                                        crate::Algo::Julia => "Julia",
                                         crate::Algo::BarnsleyFern => "Fern",
                                     })
                                     .show_ui(ui, |ui| {
@@ -154,11 +154,7 @@ impl epi::App for App {
                                             Algo::Mandelbrot,
                                             "Mandelbrot",
                                         );
-                                        ui.selectable_value(
-                                            &mut config.algo,
-                                            Algo::Julia(Imaginary::ZERO),
-                                            "Julia",
-                                        );
+                                        ui.selectable_value(&mut config.algo, Algo::Julia, "Julia");
                                         ui.selectable_value(
                                             &mut config.algo,
                                             Algo::BarnsleyFern,
@@ -184,7 +180,7 @@ impl epi::App for App {
                                 ui.add(egui::DragValue::new(&mut config.iterations));
                             }
                             // Exposure
-                            if let Algo::Mandelbrot | Algo::Julia(_) = config.algo {
+                            if let Algo::Mandelbrot | Algo::Julia = config.algo {
                                 ui.separator();
                                 ui.add(
                                     egui::Slider::new(&mut config.exposure, 0.01..=50.0)
@@ -201,15 +197,17 @@ impl epi::App for App {
                             }
                             // Flags
                             ui.separator();
-                            if let Algo::Mandelbrot | Algo::Julia(_) = config.algo {
+                            if let Algo::Mandelbrot | Algo::Julia = config.algo {
                                 ui.checkbox(&mut config.inside, "Coloured inside");
                                 ui.checkbox(&mut config.smooth, "Smoothed");
                             }
                             ui.separator();
                             // julia pos
-                            if let Algo::Julia(julia_c) = &mut config.algo {
-                                let mut value =
-                                    egui::Vec2::new(julia_c.re as f32, julia_c.im as f32);
+                            if let Algo::Julia = &mut config.algo {
+                                let mut value = egui::Vec2::new(
+                                    config.julia_set.re as f32,
+                                    config.julia_set.im as f32,
+                                );
 
                                 let frame = egui::containers::Frame::dark_canvas(ui.style())
                                     .margin(egui::Vec2::ZERO);
@@ -223,21 +221,20 @@ impl epi::App for App {
                                     ui.add(widget).changed()
                                 });
 
-                                julia_c.re = value.x as f64;
-                                julia_c.im = value.y as f64;
+                                config.julia_set.re = value.x as f64;
+                                config.julia_set.im = value.y as f64;
                             }
                             // info
                             ui.label(format!("{:.3}", config.scale.re));
-                            if let Algo::Julia(mut value) = config.algo {
+                            if let Algo::Julia = config.algo {
+                                let mut value = config.julia_set;
                                 let initial_value = value;
                                 ui.horizontal_wrapped(|ui| {
                                     ui.add(
-                                        egui::DragValue::new(&mut config.pos.re)
-                                            .max_decimals(6),
+                                        egui::DragValue::new(&mut config.pos.re).max_decimals(6),
                                     );
                                     ui.add(
-                                        egui::DragValue::new(&mut config.pos.im)
-                                            .max_decimals(6),
+                                        egui::DragValue::new(&mut config.pos.im).max_decimals(6),
                                     );
                                     ui.label("i");
                                     ui.end_row();
@@ -246,32 +243,19 @@ impl epi::App for App {
                                     ui.label("i");
 
                                     if value != initial_value {
-                                        config.algo = Algo::Julia(value);
+                                        config.julia_set = value;
+                                        config.algo = Algo::Julia;
                                     }
                                 });
                             } else {
-                                ui.add(
-                                    egui::DragValue::new(&mut config.pos.re).max_decimals(6),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut config.pos.im).max_decimals(6),
-                                );
+                                ui.add(egui::DragValue::new(&mut config.pos.re).max_decimals(6));
+                                ui.add(egui::DragValue::new(&mut config.pos.im).max_decimals(6));
                                 ui.label("i");
                             }
                         },
                     )
                 });
             });
-            if config != &previous_state {
-                if config.algo.is_different(&previous_state.algo) {
-                    let new_state = Config {
-                        algo: config.algo.clone(),
-                        ..Default::default()
-                    };
-                    *config = new_state;
-                }
-                self.request_redraw(frame.clone());
-            }
         }
         // Render this after controls to give that space. (even if it was below this on screen)
         egui::CentralPanel::default()
@@ -342,6 +326,20 @@ impl epi::App for App {
                         crate::write_image(&options, image);
                     });
                 }
+            }
+        }
+        // Apply changes
+        {
+            let config = &mut self.state.config;
+            if config != &previous_state {
+                if config.algo != previous_state.algo {
+                    let new_state = Config {
+                        algo: config.algo.clone(),
+                        ..Default::default()
+                    };
+                    *config = new_state;
+                }
+                self.request_redraw(frame.clone());
             }
         }
     }

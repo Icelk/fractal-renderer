@@ -1,15 +1,15 @@
+pub use calc::{get_recursive_pixel, Algo, Config, Imaginary, RGB};
 use std::io::Write;
-pub use calc::{Config, Imaginary, RGB, Algo, get_recursive_pixel};
 
 use clap::{Arg, ArgGroup};
 use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[cfg(feature = "gpu")]
-#[path ="compute.rs"]
+#[path = "compute.rs"]
 pub mod compute;
 #[cfg(feature = "gui")]
-#[path ="gui.rs"]
+#[path = "gui.rs"]
 pub mod gui;
 
 #[cfg(feature = "avif")]
@@ -197,10 +197,11 @@ pub fn get_options() -> Options {
         .map(|f| format!("{}.avif", f))
         .unwrap();
     let open = matches.is_present("open");
-    let mut algo = matches.value_of_t("algo").unwrap();
-    if let Algo::Julia(start) = &mut algo {
-        start.re = matches.value_of_t("julia_re").unwrap();
-        start.im = matches.value_of_t("julia_im").unwrap();
+    let algo = matches.value_of_t("algo").unwrap();
+    let mut julia_set = Imaginary::ZERO;
+    if let Algo::Julia = &algo {
+        julia_set.re = matches.value_of_t("julia_re").unwrap();
+        julia_set.im = matches.value_of_t("julia_im").unwrap();
     }
     let color_weight = matches.value_of_t("color_weight").unwrap();
     let gui = matches.is_present("gui");
@@ -223,6 +224,7 @@ pub fn get_options() -> Options {
         primary_color: primary_color.unwrap_or(reference.primary_color),
         secondary_color: secondary_color.unwrap_or(reference.secondary_color),
         color_weight,
+        julia_set,
         algo,
     };
 
@@ -230,7 +232,7 @@ pub fn get_options() -> Options {
         config,
         filename,
         open,
-        gui
+        gui,
     }
 }
 
@@ -253,7 +255,7 @@ pub fn image_to_data(image: Image, image_config: &ravif::Config, options: &Optio
 
 pub fn get_image(config: &Config) -> Vec<RGB> {
     match config.algo {
-        Algo::Mandelbrot | Algo::Julia(_) => {
+        Algo::Mandelbrot | Algo::Julia => {
             #[cfg(feature = "gpu")]
             {
                 compute::start();
@@ -261,20 +263,20 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
 
             #[cfg(not(feature = "gpu"))]
             {
-            let image: Vec<_> = (0..config.height)
-                // Only one parallell iter, else, it'd be less efficient.
-                .into_par_iter()
-                .map(|y| {
-                    let mut row = Vec::with_capacity(config.width as usize);
-                    for x in 0..config.width {
-                        row.push(get_recursive_pixel(config, x, y))
-                    }
-                    row
-                })
-                .flatten()
-                .collect();
+                let image: Vec<_> = (0..config.height)
+                    // Only one parallell iter, else, it'd be less efficient.
+                    .into_par_iter()
+                    .map(|y| {
+                        let mut row = Vec::with_capacity(config.width as usize);
+                        for x in 0..config.width {
+                            row.push(get_recursive_pixel(config, x, y))
+                        }
+                        row
+                    })
+                    .flatten()
+                    .collect();
 
-            image
+                image
             }
         }
         Algo::BarnsleyFern => {
@@ -336,8 +338,6 @@ pub fn write_image(options: &Options, mut contents: Vec<RGB>) {
         };
     }
 }
-
-
 
 pub struct Image<'a> {
     contents: &'a mut [RGB],

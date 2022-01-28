@@ -6,15 +6,18 @@
 )]
 
 #[cfg(feature = "spirv")]
-use spirv_std::num_traits::Float;
-#[cfg(feature = "spirv")]
 use core::prelude::rust_2021::*;
+#[cfg(feature = "spirv")]
+use spirv_std::num_traits::Float;
 
-use core::ops::{Add, Mul};
+#[cfg(not(feature = "spirv"))]
 use core::fmt::Display;
+use core::ops::{Add, Mul};
+#[cfg(not(feature = "spirv"))]
 use core::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(feature = "spirv"), derive(Debug))]
+#[derive(Clone, PartialEq)]
 pub struct Config {
     pub algo: Algo,
     pub width: u32,
@@ -30,13 +33,18 @@ pub struct Config {
     pub primary_color: RGB,
     pub secondary_color: RGB,
     pub color_weight: f64,
+    pub julia_set: Imaginary,
 }
 impl Config {
     pub fn new(algo: Algo) -> Self {
         Self {
             width: 2000,
             height: 1000,
-            iterations: if let Algo::BarnsleyFern = algo {10_000_000}else{50},
+            iterations: if let Algo::BarnsleyFern = algo {
+                10_000_000
+            } else {
+                50
+            },
             limit: 2.0_f64.powi(16),
             stable_limit: 2.0,
             pos: Imaginary::ZERO,
@@ -44,9 +52,18 @@ impl Config {
             exposure: 2.0,
             inside: true,
             smooth: true,
-            primary_color: if let Algo::BarnsleyFern  = algo{RGB::new(4, 100, 3)}else{RGB::new(40, 40, 255)},
-            secondary_color: if let Algo::BarnsleyFern = algo {RGB::new(240, 240, 240)}else{RGB::new(240, 170, 0)},
+            primary_color: if let Algo::BarnsleyFern = algo {
+                RGB::new(4, 100, 3)
+            } else {
+                RGB::new(40, 40, 255)
+            },
+            secondary_color: if let Algo::BarnsleyFern = algo {
+                RGB::new(240, 240, 240)
+            } else {
+                RGB::new(240, 170, 0)
+            },
             color_weight: 0.01,
+            julia_set: Imaginary::ZERO,
             algo,
         }
     }
@@ -57,7 +74,8 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(not(feature = "spirv"), derive(Debug))]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Imaginary {
     pub re: f64,
     pub im: f64,
@@ -98,17 +116,18 @@ impl Mul<f64> for Imaginary {
     }
 }
 
-const BLACK: RGB = RGB::new(0, 0, 0);
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "spirv"), derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RGB {
     pub r: u8,
     pub g: u8,
     pub b: u8,
 }
 impl RGB {
+    const BLACK: Self = Self::new(0, 0, 0);
     #[inline(always)]
     pub const fn new(r: u8, b: u8, g: u8) -> Self {
-        Self { r,g,b }
+        Self { r, g, b }
     }
 }
 fn color_multiply(color: RGB, mult: f64) -> RGB {
@@ -119,32 +138,24 @@ fn color_multiply(color: RGB, mult: f64) -> RGB {
     )
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(feature = "spirv"), derive(Debug))]
+#[derive(Clone, PartialEq)]
 pub enum Algo {
     Mandelbrot,
     BarnsleyFern,
-    Julia(Imaginary),
-}
-impl Algo {
-    #[inline(always)]
-    pub fn is_different(&self, other: &Self) -> bool {
-        if let Self::Julia(_) = self {
-            if let Self::Julia(_) = other {
-                return false;
-            }
-        }
-        !self.eq(other)
-    }
+    Julia,
 }
 pub enum AlgoParseError {
     /// Use one of the variants.
     Incorrect,
 }
+#[cfg(not(feature = "spirv"))]
 impl Display for AlgoParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "invalid algorithm name")
     }
 }
+#[cfg(not(feature = "spirv"))]
 impl FromStr for Algo {
     type Err = AlgoParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -153,7 +164,7 @@ impl FromStr for Algo {
         } else if s.eq_ignore_ascii_case("fern") || s.eq_ignore_ascii_case("barnsleyfern") {
             Self::BarnsleyFern
         } else if s.eq_ignore_ascii_case("julia") {
-            Self::Julia(Imaginary { re: 0.0, im: 0.0 })
+            Self::Julia
         } else {
             return Err(AlgoParseError::Incorrect);
         })
@@ -178,12 +189,7 @@ fn xy_to_imaginary(
     Imaginary { re, im }
 }
 
-
 pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
-    fn unreachable() -> ! {
-        panic!("called get_recursive_pixel when algo wasn't a recursive pixel one.")
-    }
-
     let start = xy_to_imaginary(
         x,
         y,
@@ -192,13 +198,13 @@ pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
         &config.pos,
         &config.scale,
     );
-    let (mandelbrot, iters) = match config.algo {
+    let (pos, iters) = match config.algo {
         Algo::Mandelbrot => recursive(config.iterations, start, start, config.limit),
-        Algo::Julia(c) => recursive(config.iterations, start, c, config.limit),
-        _ => unreachable(),
+        Algo::Julia => recursive(config.iterations, start, config.julia_set, config.limit),
+        _ => return RGB::BLACK,
     };
 
-    let dist = mandelbrot.squared_distance();
+    let dist = pos.squared_distance();
 
     if dist > config.stable_limit {
         let mut iters = iters as f64;
@@ -217,7 +223,7 @@ pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
     } else if config.inside {
         color_multiply(config.secondary_color, dist)
     } else {
-        BLACK
+        RGB::BLACK
     }
 }
 

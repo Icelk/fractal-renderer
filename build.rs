@@ -1,7 +1,7 @@
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-#[cfg(feature = "gpu")]
+    #[cfg(feature = "gpu")]
     {
         use std::env;
         use std::path::PathBuf;
