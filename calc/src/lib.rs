@@ -18,7 +18,6 @@ use core::ops::{Add, Mul};
 #[cfg(not(feature = "spirv"))]
 use core::str::FromStr;
 
-#[cfg(not(feature = "spirv"))]
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, PartialEq)]
 pub struct Config {
@@ -38,7 +37,6 @@ pub struct Config {
     pub color_weight: f64,
     pub julia_set: Imaginary,
 }
-#[cfg(not(feature = "spirv"))]
 impl Config {
     pub fn new(algo: Algo) -> Self {
         Self {
@@ -72,7 +70,6 @@ impl Config {
         }
     }
 }
-#[cfg(not(feature = "spirv"))]
 impl Default for Config {
     fn default() -> Self {
         Self::new(Algo::Mandelbrot)
@@ -86,7 +83,7 @@ pub struct InnerConfig {
     pub height: f32,
     pub iterations: f32,
     pub limit: f32,
-    pub stable_limit:f32,
+    pub stable_limit: f32,
     pub pos: Imaginary,
     pub scale: Imaginary,
     pub exposure: f32,
@@ -101,13 +98,12 @@ pub struct InnerConfig {
 }
 impl InnerConfig {
     pub fn inside(&self) -> bool {
-        self.inside > 0.0
+        self.inside > 0.5
     }
     pub fn smooth(&self) -> bool {
-        self.smooth > 0.0
+        self.smooth > 0.5
     }
 }
-#[cfg(not(feature = "spirv"))]
 impl From<Config> for InnerConfig {
     fn from(c: Config) -> Self {
         let Config {
@@ -129,16 +125,16 @@ impl From<Config> for InnerConfig {
         } = c;
         Self {
             algo,
-            width,
-            height,
+            width: width as _,
+            height: height as _,
             iterations: iterations as _,
-            limit,
-            stable_limit,
+            limit: limit as _,
+            stable_limit: stable_limit as _,
             pos,
             scale,
-            exposure,
-            inside: if inside { 1 } else { 0 },
-            smooth: if inside { 1 } else { 0 },
+            exposure: exposure as _,
+            inside: if inside { 1.0 } else { 0.0 },
+            smooth: if smooth { 1.0 } else { 0.0 },
             primary_color: RGBF::new(
                 primary_color.r as _,
                 primary_color.g as _,
@@ -149,7 +145,7 @@ impl From<Config> for InnerConfig {
                 secondary_color.g as _,
                 secondary_color.b as _,
             ),
-            color_weight,
+            color_weight: color_weight as f32,
             julia_set,
         }
     }
@@ -197,7 +193,6 @@ impl Mul<f32> for Imaginary {
     }
 }
 
-#[cfg(not(feature = "spirv"))]
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RGB {
@@ -205,7 +200,6 @@ pub struct RGB {
     pub g: u8,
     pub b: u8,
 }
-#[cfg(not(feature = "spirv"))]
 impl RGB {
     const BLACK: Self = Self::new(0, 0, 0);
     #[inline(always)]
@@ -213,7 +207,6 @@ impl RGB {
         Self { r, g, b }
     }
 }
-#[cfg(not(feature = "spirv"))]
 impl Mul<f64> for RGB {
     type Output = Self;
     fn mul(self, mult: f64) -> Self::Output {
@@ -244,7 +237,6 @@ impl Mul<f32> for RGBF {
         RGBF::new(self.r * mult, self.g * mult, self.b * mult)
     }
 }
-#[cfg(not(feature = "spirv"))]
 impl From<RGBF> for RGB {
     fn from(rgb: RGBF) -> Self {
         Self::new(rgb.r as _, rgb.g as _, rgb.b as _)
@@ -360,7 +352,7 @@ pub fn recursive(iterations: f32, start: Imaginary, c: Imaginary, limit: f32) ->
             return (next, i);
         }
         previous = next;
-        i+=1.0;
+        i += 1.0;
     }
     (previous, iterations)
 }

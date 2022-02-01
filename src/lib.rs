@@ -1,4 +1,4 @@
-pub use calc::{get_recursive_pixel, Algo, Config, Imaginary, RGB};
+pub use calc::{get_recursive_pixel, Algo, Config, Imaginary, RGB, InnerConfig};
 use std::io::Write;
 
 use clap::{Arg, ArgGroup};
@@ -254,6 +254,7 @@ pub fn image_to_data(image: Image, image_config: &ravif::Config, options: &Optio
 }
 
 pub fn get_image(config: &Config) -> Vec<RGB> {
+    let inner_config: InnerConfig = config.clone().into();
     match config.algo {
         Algo::Mandelbrot | Algo::Julia => {
             #[cfg(feature = "gpu")]
@@ -269,7 +270,8 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
                     .map(|y| {
                         let mut row = Vec::with_capacity(config.width as usize);
                         for x in 0..config.width {
-                            row.push(get_recursive_pixel(config, x, y))
+                            let pixel = get_recursive_pixel(&inner_config, x as f32, y as f32);
+                            row.push(pixel.into())
                         }
                         row
                     })
@@ -389,14 +391,14 @@ impl<'a> From<Image<'a>> for ravif::Img<&'a [ravif::RGB8]> {
 
 #[inline(always)]
 pub fn fern(config: &Config, image: &mut Image) {
-    let width = config.width as f64;
-    let height = config.height as f64;
+    let width = config.width as f32;
+    let height = config.height as f32;
     let mut x = (config.pos.re) * width;
     let mut y = (config.pos.im) * height;
 
     // 0.006 just works fine, to get the scale in line with the other algos
-    let effective_scale_x = 65.0 * config.scale.re * config.height as f64 * 0.006;
-    let effective_scale_y = 37.0 * config.scale.im * config.height as f64 * 0.006;
+    let effective_scale_x = 65.0 * config.scale.re * config.height as f32 * 0.006;
+    let effective_scale_y = 37.0 * config.scale.im * config.height as f32 * 0.006;
 
     let mut rng = rand::rngs::SmallRng::from_entropy();
 
@@ -412,7 +414,7 @@ pub fn fern(config: &Config, image: &mut Image) {
             config.color_weight,
         );
 
-        let r: f64 = rng.gen();
+        let r: f32 = rng.gen();
 
         // https://en.wikipedia.org/wiki/Barnsley_fern#Python
         if r < 0.01 {
