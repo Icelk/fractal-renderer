@@ -5,9 +5,6 @@ use clap::{Arg, ArgGroup};
 use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-#[cfg(feature = "gpu")]
-#[path = "compute.rs"]
-pub mod compute;
 #[cfg(feature = "gui")]
 #[path = "gui.rs"]
 pub mod gui;
@@ -256,28 +253,20 @@ pub fn image_to_data(image: Image, image_config: &ravif::Config, options: &Optio
 pub fn get_image(config: &Config) -> Vec<RGB> {
     match config.algo {
         Algo::Mandelbrot | Algo::Julia => {
-            #[cfg(feature = "gpu")]
-            {
-                compute::start();
-            }
+            let image: Vec<_> = (0..config.height)
+                // Only one parallell iter, else, it'd be less efficient.
+                .into_par_iter()
+                .map(|y| {
+                    let mut row = Vec::with_capacity(config.width as usize);
+                    for x in 0..config.width {
+                        row.push(get_recursive_pixel(config, x, y))
+                    }
+                    row
+                })
+                .flatten()
+                .collect();
 
-            #[cfg(not(feature = "gpu"))]
-            {
-                let image: Vec<_> = (0..config.height)
-                    // Only one parallell iter, else, it'd be less efficient.
-                    .into_par_iter()
-                    .map(|y| {
-                        let mut row = Vec::with_capacity(config.width as usize);
-                        for x in 0..config.width {
-                            row.push(get_recursive_pixel(config, x, y))
-                        }
-                        row
-                    })
-                    .flatten()
-                    .collect();
-
-                image
-            }
+            image
         }
         Algo::BarnsleyFern => {
             let mut contents =
