@@ -221,8 +221,8 @@ impl epi::App for App {
                                     ui.add(widget).changed()
                                 });
 
-                                config.julia_set.re = value.x as _;
-                                config.julia_set.im = value.y as _;
+                                config.julia_set.re = value.x as f64;
+                                config.julia_set.im = value.y as f64;
                             }
                             // info
                             ui.label(format!("{:.3}", config.scale.re));
@@ -282,7 +282,7 @@ impl epi::App for App {
             // Movement
             #[allow(unused_braces, clippy::blocks_in_if_conditions)]
             if !ctx.wants_keyboard_input() {
-                let dt = { ctx.input().predicted_dt };
+                let dt = { ctx.input().predicted_dt } as f64;
 
                 let scale_x = 1.0 / config.scale.re;
                 let scale_y = 1.0 / config.scale.im;
@@ -309,9 +309,9 @@ impl epi::App for App {
                                 let scale_diff =
                                     (F32Ord((delta / 10.0 + 1.0).log10() / 2.0).min(F32Ord(1.0))).0;
 
-                                1.0 - scale_diff as f32
+                                1.0 - scale_diff as f64
                             } else {
-                                1.0 + (delta as f32 / 80.0)
+                                1.0 + (delta as f64 / 80.0)
                             };
                     }
                 }

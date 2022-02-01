@@ -8,8 +8,6 @@
 #[cfg(feature = "spirv")]
 use core::prelude::rust_2021::*;
 #[cfg(feature = "spirv")]
-use spirv_std::glam::Vec3;
-#[cfg(feature = "spirv")]
 use spirv_std::num_traits::Float;
 
 #[cfg(not(feature = "spirv"))]
@@ -47,7 +45,7 @@ impl Config {
             } else {
                 50
             },
-            limit: 4.0,
+            limit: 2.0_f64.powi(16),
             stable_limit: 2.0,
             pos: Imaginary::ZERO,
             scale: Imaginary::ONE * 0.4,
@@ -75,87 +73,12 @@ impl Default for Config {
         Self::new(Algo::Mandelbrot)
     }
 }
-/// Here for SPIRV to compile.
-#[derive(Clone, PartialEq)]
-pub struct InnerConfig {
-    pub algo: Algo,
-    pub width: f32,
-    pub height: f32,
-    pub iterations: f32,
-    pub limit: f32,
-    pub stable_limit: f32,
-    pub pos: Imaginary,
-    pub scale: Imaginary,
-    pub exposure: f32,
-    /// If `> 0`, it's true.
-    pub inside: f32,
-    /// If `> 0`, it's true.
-    pub smooth: f32,
-    pub primary_color: RGBF,
-    pub secondary_color: RGBF,
-    pub color_weight: f32,
-    pub julia_set: Imaginary,
-}
-impl InnerConfig {
-    pub fn inside(&self) -> bool {
-        self.inside > 0.5
-    }
-    pub fn smooth(&self) -> bool {
-        self.smooth > 0.5
-    }
-}
-impl From<Config> for InnerConfig {
-    fn from(c: Config) -> Self {
-        let Config {
-            algo,
-            width,
-            height,
-            iterations,
-            limit,
-            stable_limit,
-            pos,
-            scale,
-            exposure,
-            inside,
-            smooth,
-            primary_color,
-            secondary_color,
-            color_weight,
-            julia_set,
-        } = c;
-        Self {
-            algo,
-            width: width as _,
-            height: height as _,
-            iterations: iterations as _,
-            limit: limit as _,
-            stable_limit: stable_limit as _,
-            pos,
-            scale,
-            exposure: exposure as _,
-            inside: if inside { 1.0 } else { 0.0 },
-            smooth: if smooth { 1.0 } else { 0.0 },
-            primary_color: RGBF::new(
-                primary_color.r as _,
-                primary_color.g as _,
-                primary_color.b as _,
-            ),
-            secondary_color: RGBF::new(
-                secondary_color.r as _,
-                secondary_color.g as _,
-                secondary_color.b as _,
-            ),
-            color_weight: color_weight as f32,
-            julia_set,
-        }
-    }
-}
 
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, Copy, PartialEq)]
 pub struct Imaginary {
-    pub re: f32,
-    pub im: f32,
+    pub re: f64,
+    pub im: f64,
 }
 impl Imaginary {
     pub const ZERO: Self = Self { re: 0.0, im: 0.0 };
@@ -168,7 +91,7 @@ impl Imaginary {
         Self { re, im }
     }
     #[inline(always)]
-    pub fn squared_distance(self) -> f32 {
+    pub fn squared_distance(self) -> f64 {
         self.re * self.re + self.im * self.im
     }
 }
@@ -182,10 +105,10 @@ impl Add for Imaginary {
         }
     }
 }
-impl Mul<f32> for Imaginary {
+impl Mul<f64> for Imaginary {
     type Output = Self;
     #[inline(always)]
-    fn mul(self, rhs: f32) -> Self::Output {
+    fn mul(self, rhs: f64) -> Self::Output {
         Self {
             re: self.re * rhs,
             im: self.im * rhs,
@@ -207,45 +130,16 @@ impl RGB {
         Self { r, g, b }
     }
 }
-impl Mul<f64> for RGB {
-    type Output = Self;
-    fn mul(self, mult: f64) -> Self::Output {
-        RGB::new(
-            (self.r as f64 * mult) as u8,
-            (self.g as f64 * mult) as u8,
-            (self.b as f64 * mult) as u8,
-        )
-    }
-}
-/// RGB value with floats. Range: 0..256
-#[derive(Clone, PartialEq, Copy)]
-pub struct RGBF {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-}
-impl RGBF {
-    const BLACK: Self = Self::new(0.0, 0.0, 0.0);
-    #[inline(always)]
-    pub const fn new(r: f32, b: f32, g: f32) -> Self {
-        Self { r, g, b }
-    }
-}
-impl Mul<f32> for RGBF {
-    type Output = Self;
-    fn mul(self, mult: f32) -> Self::Output {
-        RGBF::new(self.r * mult, self.g * mult, self.b * mult)
-    }
-}
-impl From<RGBF> for RGB {
-    fn from(rgb: RGBF) -> Self {
-        Self::new(rgb.r as _, rgb.g as _, rgb.b as _)
-    }
+fn color_multiply(color: RGB, mult: f64) -> RGB {
+    RGB::new(
+        (color.r as f64 * mult) as u8,
+        (color.g as f64 * mult) as u8,
+        (color.b as f64 * mult) as u8,
+    )
 }
 
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, PartialEq)]
-#[repr(u32)]
 pub enum Algo {
     Mandelbrot,
     BarnsleyFern,
@@ -278,58 +172,58 @@ impl FromStr for Algo {
 }
 
 #[inline(always)]
-fn coord_to_space(coord: f32, max: f32, offset: f32, pos: f32, scale: f32) -> f32 {
+fn coord_to_space(coord: f64, max: f64, offset: f64, pos: f64, scale: f64) -> f64 {
     ((coord / max) - offset) / scale + pos
 }
 #[inline(always)]
 fn xy_to_imaginary(
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    x: u32,
+    y: u32,
+    width: f64,
+    height: f64,
     pos: &Imaginary,
     scale: &Imaginary,
 ) -> Imaginary {
-    let re = coord_to_space(x, height, (width / height) / 2.0, pos.re, scale.re);
-    let im = coord_to_space(y, height, 0.5, pos.im, scale.im);
+    let re = coord_to_space(x as f64, height, (width / height) / 2.0, pos.re, scale.re);
+    let im = coord_to_space(y as f64, height, 0.5, pos.im, scale.im);
     Imaginary { re, im }
 }
 
-pub fn get_recursive_pixel(config: &InnerConfig, x: f32, y: f32) -> RGBF {
+pub fn get_recursive_pixel(config: &Config, x: u32, y: u32) -> RGB {
     let start = xy_to_imaginary(
         x,
         y,
-        config.width,
-        config.height,
+        config.width as f64,
+        config.height as f64,
         &config.pos,
         &config.scale,
     );
     let (pos, iters) = match config.algo {
         Algo::Mandelbrot => recursive(config.iterations, start, start, config.limit),
         Algo::Julia => recursive(config.iterations, start, config.julia_set, config.limit),
-        _ => return RGBF::BLACK,
+        _ => return RGB::BLACK,
     };
 
     let dist = pos.squared_distance();
 
     if dist > config.stable_limit {
-        let mut iters = iters;
+        let mut iters = iters as f64;
 
-        if config.smooth() {
+        if config.smooth {
             // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
 
-            let log_zn = f32::log2(dist.sqrt()) / 2.0;
-            let nu = f32::log2(log_zn);
+            let log_zn = f64::log2(dist.sqrt()) / 2.0;
+            let nu = f64::log2(log_zn);
 
             iters += 1.0 - nu;
         }
 
-        let mult = iters / config.iterations * config.exposure;
-        config.primary_color * mult
-    } else if config.inside() {
-        config.secondary_color * dist as f32
+        let mult = iters as f64 / config.iterations as f64 * config.exposure;
+        color_multiply(config.primary_color, mult)
+    } else if config.inside {
+        color_multiply(config.secondary_color, dist)
     } else {
-        RGBF::BLACK
+        RGB::BLACK
     }
 }
 
@@ -341,18 +235,16 @@ pub fn get_recursive_pixel(config: &InnerConfig, x: f32, y: f32) -> RGBF {
 ///
 /// Returns the final position and the number of iterations to get there.
 #[inline(always)]
-pub fn recursive(iterations: f32, start: Imaginary, c: Imaginary, limit: f32) -> (Imaginary, f32) {
+pub fn recursive(iterations: u32, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, u32) {
     let squared = limit * limit;
     let mut previous = start;
-    let mut i = 0.0;
-    while i < iterations {
+    for i in 0..iterations {
         let next = previous.square() + c;
         let dist = next.squared_distance();
         if dist > squared {
             return (next, i);
         }
         previous = next;
-        i += 1.0;
     }
     (previous, iterations)
 }
