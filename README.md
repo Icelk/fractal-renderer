@@ -17,6 +17,10 @@ In the future, I'll make the feature optional and enable you to use other image 
 
 ## Using the GPU feature
 
+> Currently does not work.
+> The progress is stalled due to precision issues. ([FP](http://www.bealto.com/mp-mandelbrot_intro.html) is a possible solution?)
+> Check out the [gpu](https://github.com/Icelk/fractal-renderer/tree/gpu) branch.
+
 This renders the fractals on the GPU.
 
 ```bash
@@ -25,7 +29,7 @@ $ rustup update
 $ rustup component add --toolchain nightly-2022-01-13 rust-src rustc-dev llvm-tools-preview
 ```
 
-Run using the folowing
+Run using the following
 
 ```bash
 $ cargo +nighly-2022-01-13 r --feaures gpu
