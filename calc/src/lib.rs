@@ -47,7 +47,7 @@ impl Config {
             } else {
                 50
             },
-            limit: 2.0_f64.powi(16),
+            limit: 4.0,
             stable_limit: 2.0,
             pos: Imaginary::ZERO,
             scale: Imaginary::ONE * 0.4,
