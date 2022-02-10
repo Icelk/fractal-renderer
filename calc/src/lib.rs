@@ -8,8 +8,6 @@
 #[cfg(feature = "spirv")]
 use core::prelude::rust_2021::*;
 #[cfg(feature = "spirv")]
-use spirv_std::glam::Vec3;
-#[cfg(feature = "spirv")]
 use spirv_std::num_traits::Float;
 
 #[cfg(not(feature = "spirv"))]
@@ -79,21 +77,21 @@ impl Default for Config {
 #[derive(Clone, PartialEq)]
 pub struct InnerConfig {
     pub algo: Algo,
-    pub width: f32,
-    pub height: f32,
-    pub iterations: f32,
-    pub limit: f32,
-    pub stable_limit: f32,
+    pub width: f64,
+    pub height: f64,
+    pub iterations: f64,
+    pub limit: f64,
+    pub stable_limit: f64,
     pub pos: Imaginary,
     pub scale: Imaginary,
-    pub exposure: f32,
+    pub exposure: f64,
     /// If `> 0`, it's true.
-    pub inside: f32,
+    pub inside: f64,
     /// If `> 0`, it's true.
-    pub smooth: f32,
+    pub smooth: f64,
     pub primary_color: RGBF,
     pub secondary_color: RGBF,
-    pub color_weight: f32,
+    pub color_weight: f64,
     pub julia_set: Imaginary,
 }
 impl InnerConfig {
@@ -104,6 +102,7 @@ impl InnerConfig {
         self.smooth > 0.5
     }
 }
+#[cfg(not(feature = "spirv"))]
 impl From<Config> for InnerConfig {
     fn from(c: Config) -> Self {
         let Config {
@@ -129,7 +128,7 @@ impl From<Config> for InnerConfig {
             height: height as _,
             iterations: iterations as _,
             limit: limit as _,
-            stable_limit: stable_limit as _,
+            stable_limit,
             pos,
             scale,
             exposure: exposure as _,
@@ -145,7 +144,7 @@ impl From<Config> for InnerConfig {
                 secondary_color.g as _,
                 secondary_color.b as _,
             ),
-            color_weight: color_weight as f32,
+            color_weight,
             julia_set,
         }
     }
@@ -154,12 +153,12 @@ impl From<Config> for InnerConfig {
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, Copy, PartialEq)]
 pub struct Imaginary {
-    pub re: f32,
-    pub im: f32,
+    pub re: f64,
+    pub im: f64,
 }
 impl Imaginary {
     pub const ZERO: Self = Self { re: 0.0, im: 0.0 };
-    const ONE: Self = Self { re: 1.0, im: 1.0 };
+    pub const ONE: Self = Self { re: 1.0, im: 1.0 };
     #[inline(always)]
     pub fn square(self) -> Self {
         let re = (self.re * self.re) - (self.im * self.im);
@@ -168,7 +167,7 @@ impl Imaginary {
         Self { re, im }
     }
     #[inline(always)]
-    pub fn squared_distance(self) -> f32 {
+    pub fn squared_distance(self) -> f64 {
         self.re * self.re + self.im * self.im
     }
 }
@@ -182,10 +181,10 @@ impl Add for Imaginary {
         }
     }
 }
-impl Mul<f32> for Imaginary {
+impl Mul<f64> for Imaginary {
     type Output = Self;
     #[inline(always)]
-    fn mul(self, rhs: f32) -> Self::Output {
+    fn mul(self, rhs: f64) -> Self::Output {
         Self {
             re: self.re * rhs,
             im: self.im * rhs,
@@ -201,12 +200,13 @@ pub struct RGB {
     pub b: u8,
 }
 impl RGB {
-    const BLACK: Self = Self::new(0, 0, 0);
+    pub const BLACK: Self = Self::new(0, 0, 0);
     #[inline(always)]
     pub const fn new(r: u8, b: u8, g: u8) -> Self {
         Self { r, g, b }
     }
 }
+#[cfg(not(feature = "spirv"))]
 impl Mul<f64> for RGB {
     type Output = Self;
     fn mul(self, mult: f64) -> Self::Output {
@@ -220,20 +220,20 @@ impl Mul<f64> for RGB {
 /// RGB value with floats. Range: 0..256
 #[derive(Clone, PartialEq, Copy)]
 pub struct RGBF {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
 }
 impl RGBF {
-    const BLACK: Self = Self::new(0.0, 0.0, 0.0);
+    pub const BLACK: Self = Self::new(0.0, 0.0, 0.0);
     #[inline(always)]
-    pub const fn new(r: f32, b: f32, g: f32) -> Self {
+    pub const fn new(r: f64, b: f64, g: f64) -> Self {
         Self { r, g, b }
     }
 }
-impl Mul<f32> for RGBF {
+impl Mul<f64> for RGBF {
     type Output = Self;
-    fn mul(self, mult: f32) -> Self::Output {
+    fn mul(self, mult: f64) -> Self::Output {
         RGBF::new(self.r * mult, self.g * mult, self.b * mult)
     }
 }
@@ -245,7 +245,6 @@ impl From<RGBF> for RGB {
 
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
 #[derive(Clone, PartialEq)]
-#[repr(u32)]
 pub enum Algo {
     Mandelbrot,
     BarnsleyFern,
@@ -278,15 +277,15 @@ impl FromStr for Algo {
 }
 
 #[inline(always)]
-fn coord_to_space(coord: f32, max: f32, offset: f32, pos: f32, scale: f32) -> f32 {
+fn coord_to_space(coord: f64, max: f64, offset: f64, pos: f64, scale: f64) -> f64 {
     ((coord / max) - offset) / scale + pos
 }
 #[inline(always)]
 fn xy_to_imaginary(
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
     pos: &Imaginary,
     scale: &Imaginary,
 ) -> Imaginary {
@@ -295,7 +294,7 @@ fn xy_to_imaginary(
     Imaginary { re, im }
 }
 
-pub fn get_recursive_pixel(config: &InnerConfig, x: f32, y: f32) -> RGBF {
+pub fn get_recursive_pixel(config: &InnerConfig, x: f64, y: f64) -> RGBF {
     let start = xy_to_imaginary(
         x,
         y,
@@ -318,16 +317,16 @@ pub fn get_recursive_pixel(config: &InnerConfig, x: f32, y: f32) -> RGBF {
         if config.smooth() {
             // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
 
-            let log_zn = f32::log2(dist.sqrt()) / 2.0;
-            let nu = f32::log2(log_zn);
+            let log_zn = f64::log2(dist.sqrt()) / 2.0;
+            let nu = f64::log2(log_zn);
 
-            iters += 1.0 - nu;
+            iters = iters + 1.0 - nu;
         }
 
         let mult = iters / config.iterations * config.exposure;
         config.primary_color * mult
     } else if config.inside() {
-        config.secondary_color * dist as f32
+        config.secondary_color * dist
     } else {
         RGBF::BLACK
     }
@@ -341,7 +340,7 @@ pub fn get_recursive_pixel(config: &InnerConfig, x: f32, y: f32) -> RGBF {
 ///
 /// Returns the final position and the number of iterations to get there.
 #[inline(always)]
-pub fn recursive(iterations: f32, start: Imaginary, c: Imaginary, limit: f32) -> (Imaginary, f32) {
+pub fn recursive(iterations: f64, start: Imaginary, c: Imaginary, limit: f64) -> (Imaginary, f64) {
     let squared = limit * limit;
     let mut previous = start;
     let mut i = 0.0;
@@ -352,7 +351,7 @@ pub fn recursive(iterations: f32, start: Imaginary, c: Imaginary, limit: f32) ->
             return (next, i);
         }
         previous = next;
-        i += 1.0;
+        i = i + 1.0;
     }
     (previous, iterations)
 }
