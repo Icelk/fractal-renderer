@@ -333,10 +333,7 @@ impl epi::App for App {
             let config = &mut self.state.config;
             if config != &previous_state {
                 if config.algo != previous_state.algo {
-                    let new_state = Config {
-                        algo: config.algo.clone(),
-                        ..Default::default()
-                    };
+                    let new_state = Config::new(config.algo.clone());
                     *config = new_state;
                 }
                 self.request_redraw(frame.clone());

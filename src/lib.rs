@@ -269,15 +269,53 @@ pub fn get_image(config: &Config) -> Vec<RGB> {
             image
         }
         Algo::BarnsleyFern => {
-            let mut contents =
-                vec![config.secondary_color; (config.width * config.height) as usize];
+            /// # Safety
+            ///
+            /// Width and height of `a` & `b` must be equal.
+            unsafe fn combine_images(a: &mut Image, b: &mut Image) {
+                for y in 0..a.height {
+                    for x in 0..a.width {
+                        let idx = y * a.width + x;
+                        let pix = a.contents.get_unchecked(idx);
+                        let acc_pix = b.contents.get_unchecked_mut(idx);
+                        *acc_pix += *pix;
+                    }
+                }
+            }
+            let threads = rayon::current_num_threads() as u32;
+            let per_thread_iterations = config.iterations / threads;
 
-            let mut image =
-                Image::new(&mut contents, config.width as usize, config.height as usize);
+            let mut config = config.clone();
+            config.iterations = per_thread_iterations;
 
-            fern(config, &mut image);
+            // we can use a parallel iterator, as this fractal is random, so we should
+            // probabilistically get the same result as when using 1 thread.
+            let images = (0..threads).into_par_iter().map(|_| {
+                let mut contents =
+                    vec![config.secondary_color; (config.width * config.height) as usize];
 
-            contents
+                let mut image =
+                    Image::new(&mut contents, config.width as usize, config.height as usize);
+                fern(&config, &mut image);
+                contents
+            });
+
+            images.reduce(Vec::new, |mut a, mut b| {
+                match (a.is_empty(), b.is_empty()) {
+                    (true, false) => b,
+                    (false, true) => a,
+                    (true, true) => unreachable!(),
+                    (false, false) => {
+                        let mut im_a =
+                            Image::new(&mut a, config.width as usize, config.height as usize);
+                        let mut im_b =
+                            Image::new(&mut b, config.width as usize, config.height as usize);
+
+                        unsafe { combine_images(&mut im_a, &mut im_b) };
+                        a
+                    }
+                }
+            })
         }
     }
 }

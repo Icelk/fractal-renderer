@@ -12,7 +12,7 @@ use spirv_std::num_traits::Float;
 
 #[cfg(not(feature = "spirv"))]
 use core::fmt::Display;
-use core::ops::{Add, Mul};
+use core::ops::{Add, AddAssign, Mul};
 #[cfg(not(feature = "spirv"))]
 use core::str::FromStr;
 
@@ -136,6 +136,13 @@ fn color_multiply(color: RGB, mult: f64) -> RGB {
         (color.g as f64 * mult) as u8,
         (color.b as f64 * mult) as u8,
     )
+}
+impl AddAssign for RGB {
+    fn add_assign(&mut self, rhs: Self) {
+        self.r = self.r.saturating_add(rhs.r);
+        self.g = self.g.saturating_add(rhs.g);
+        self.b = self.b.saturating_add(rhs.b);
+    }
 }
 
 #[cfg_attr(not(feature = "spirv"), derive(Debug))]
