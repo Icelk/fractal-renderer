@@ -10,7 +10,7 @@ repository = "https://github.com/Icelk/fractal-renderer/"
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-spirv-std = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu/", features = ["glam"] }
+spirv-std = { optional = true, git = "https://github.com/EmbarkStudios/rust-gpu/", rev = "685c79a", features = ["glam"] }
 
 [features]
 spirv = ["spirv-std"]

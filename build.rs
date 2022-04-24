@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dir = dir.join("spirv-builder");
         let status = std::process::Command::new("cargo")
             .args([
-                "+nightly-2022-01-13",
+                "+nightly-2022-04-11",
                 "run",
                 "--release",
                 "-p",

@@ -10,6 +10,6 @@ publish = false
 crate-type = ["dylib", "lib"]
 
 [dependencies]
-spirv-std = { git = "https://github.com/EmbarkStudios/rust-gpu/", features = ["glam"] }
+spirv-std = { git = "https://github.com/EmbarkStudios/rust-gpu/", rev = "685c79a", features = ["glam"] }
 # My crate
 fractal-renderer-calc = { path = "../calc/", version = "0.2.0", features = ["spirv"] }

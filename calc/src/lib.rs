@@ -95,7 +95,7 @@ pub struct InnerConfig {
     pub julia_set: Imaginary,
 }
 impl InnerConfig {
-    const BYTE_SIZE: usize = 124;
+    const BYTE_SIZE: usize = core::mem::size_of::<Self>();
 
     pub fn inside(&self) -> bool {
         self.inside > 0.5
@@ -103,19 +103,22 @@ impl InnerConfig {
     pub fn smooth(&self) -> bool {
         self.smooth > 0.5
     }
-    pub fn to_bytes(&self) -> &[u8] {
-        let mut slice =
-            core::ptr::slice_from_raw_parts(self as *const Self as *mut u8, Self::BYTE_SIZE);
-        unsafe { &*slice }
-    }
-    /// You have to guarantee the bytes are valid (mainly for the [`Algo`]) and that `slice` is at
-    /// least [`Self::BYTE_SIZE`].
-    ///
-    /// This also assumes the layout is packed (which it probably isn't). **So maybe don't use this.**
-    pub unsafe fn from_bytes(slice: &[u8]) -> &Self {
-        // welp, not a very safe call.
-        core::mem::transmute(slice)
-    }
+    // pub fn to_bytes(&self) -> &[u8] {
+        // let slice = core::ptr::slice_from_raw_parts(
+            // self as *const Self as *mut u8,
+            // Self::BYTE_SIZE
+        // );
+        // unsafe { &*slice }
+    // }
+    // /// You have to guarantee the bytes are valid (mainly for the [`Algo`]) and that `slice` is at
+    // /// least [`Self::BYTE_SIZE`].
+    // ///
+    // /// This also assumes the layout is packed (which it probably isn't). **So maybe don't use this.**
+    // pub unsafe fn from_bytes(slice: &[u8]) -> &Self {
+        // assert_eq!(slice.len(), Self::BYTE_SIZE);
+        // // welp, not a very safe call.
+        // core::mem::transmute(slice.as_ptr())
+    // }
 }
 #[cfg(not(feature = "spirv"))]
 impl From<Config> for InnerConfig {
